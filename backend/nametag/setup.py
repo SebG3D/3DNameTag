@@ -21,8 +21,13 @@ class PrintSetup:
     text_overlap: float
     hole_d: float
     text_grow: float
-    layer_h: float
+    layer_h: float        # base layers (profile layer_height)
     first_layer_h: float
+    text_layer_h: float   # text layers (layer range in the plate 3MF)
+
+    @property
+    def text_layers(self) -> int:
+        return round(self.text_h / self.text_layer_h)
 
     def scad_defines(self) -> dict:
         return {"s": self.scale, "base_h": self.base_h, "text_h": self.text_h,
@@ -45,5 +50,11 @@ def load_setup(name: str | None = None, config: Path = CONFIG) -> PrintSetup:
     n = (e["base_h"] - first) / layer
     if n < 1 or abs(n - round(n)) > 1e-6:
         raise ValueError(f"{name}: base_h {e['base_h']} is not first_layer {first} + n * layer {layer}")
+    text_layer = e.get("text_layer_h", layer)
+    m = e["text_h"] / text_layer
+    if m < 1 or abs(m - round(m)) > 1e-6:
+        raise ValueError(f"{name}: text_h {e['text_h']} is not n * text_layer_h {text_layer}")
+    if e["text_overlap"] > layer + 1e-9:
+        raise ValueError(f"{name}: text_overlap must not exceed one base layer ({layer})")
     return PrintSetup(name, profile, e["scale"], e["min_text_size"], e["base_h"], e["text_h"],
-                      e["text_overlap"], e["hole_d"], e["text_grow"], layer, first)
+                      e["text_overlap"], e["hole_d"], e["text_grow"], layer, first, text_layer)

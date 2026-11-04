@@ -71,3 +71,17 @@ def test_setups_on_layer_boundary():
     for name in ["nozzle040", "nozzle040s", "nozzle025"]:
         s = load_setup(name)
         assert s.profile.exists()
+
+
+def test_plate_text_layers(tmp_path):
+    """Full pipeline: base in profile layers, text in text_layer_h layers, M600 between."""
+    from nametag.plate import build_plate
+    from nametag.render import render_tag
+    from nametag.slicer import slice_plate
+    setup = load_setup("nozzle040s")
+    fonts, shapes = load_fonts(), load_shapes()
+    r = render_tag("EMMA", fonts["baloo"], shapes["stadium"], setup, tmp_path, "t")
+    build_plate({"t": r["files"]["tag"]}, tmp_path / "plate.3mf", setup)
+    res = slice_plate([tmp_path / "plate.3mf"], tmp_path / "plate.gcode", setup)
+    assert res.color_change_z == pytest.approx(setup.base_h + setup.text_layer_h)
+    assert [ln for ln in res.gcode.read_text().splitlines() if ln.startswith("M600")] == ["M600 ; booth: text colour"]

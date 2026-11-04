@@ -5,7 +5,8 @@
   python3 tools/make_plate.py -o out/ --all-shapes EMMA      # one per shape
   python3 tools/make_plate.py -o out/ --all-fonts WEIHNACHTEN
 
-Writes out/plate.gcode (M600 at the first text layer, plain G-code for the
+Writes out/plate.3mf (text layer range, open in PrusaSlicer to inspect) and
+out/plate.gcode (M600 at the first text layer, plain G-code for the
 Core One via USB stick or PrusaLink upload) and prints the plate map.
 """
 import argparse
@@ -52,8 +53,8 @@ def main():
         r = render_tag(name, fonts[font], shapes[shape], setup, a.out / "tags", f"t{i:02d}")
         stls[f"t{i:02d}"] = r["files"]["tag"]
         labels[f"t{i:02d}"] = f"{name} ({font}, {shape}, text {r['layout'].printed_size:.1f} mm)"
-    placed, rest = build_plate(stls, a.out / "plate.stl")
-    res = slice_plate([a.out / "plate.stl"], a.out / "plate.gcode", setup)
+    placed, rest = build_plate(stls, a.out / "plate.3mf", setup)
+    res = slice_plate([a.out / "plate.3mf"], a.out / "plate.gcode", setup)
     print(f"setup {setup.name} ({setup.profile.name}, scale {setup.scale})")
     print(f"plate: {len(placed)} tags, est. {res.estimated_s / 60:.0f} min, M600 at Z={res.color_change_z}, "
           f"built in {time.time() - t0:.1f} s -> {res.gcode}")

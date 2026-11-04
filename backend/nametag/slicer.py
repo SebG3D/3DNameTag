@@ -44,14 +44,25 @@ def insert_color_change(gcode: str, base_h: float) -> tuple[str, float]:
     raise SliceError(f"no layer above base_h={base_h}")
 
 
-def slice_plate(stls: list[Path], out: Path, setup: PrintSetup) -> PlateResult:
-    """Slice with the setup's profile; base_h is checked against the layer
-    heights when the setup is loaded (nametag.setup)."""
-    if not stls:
+def check_layers(gcode: str, setup: PrintSetup) -> None:
+    """The sliced layers must match the setup: base on base_h, then exactly
+    text_layers layers of text_layer_h (catches a lost 3MF layer range)."""
+    zs = [float(z) for z in re.findall(r"^;LAYER_CHANGE\n;Z:([\d.]+)$", gcode, re.M)]
+    if not any(abs(z - setup.base_h) < 1e-3 for z in zs):
+        raise SliceError(f"no layer ends at base_h={setup.base_h}: {zs[:12]}")
+    text = [z for z in zs if z > setup.base_h + 1e-3]
+    want = [round(setup.base_h + (i + 1) * setup.text_layer_h, 4) for i in range(setup.text_layers)]
+    if [round(z, 4) for z in text] != want:
+        raise SliceError(f"text layers {text} != expected {want}")
+
+
+def slice_plate(models: list[Path], out: Path, setup: PrintSetup) -> PlateResult:
+    """Slice with the setup's profile (plate 3MF from nametag.plate)."""
+    if not models:
         raise SliceError("empty plate")
     profile, base_h = setup.profile, setup.base_h
     raw = out.with_suffix(".raw.gcode")
-    cmd = [PRUSA_SLICER, "--load", str(profile), "--dont-arrange", "--export-gcode", "-o", str(raw), *map(str, stls)]
+    cmd = [PRUSA_SLICER, "--load", str(profile), "--dont-arrange", "--export-gcode", "-o", str(raw), *map(str, models)]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if r.returncode != 0 or not raw.exists():
         raise SliceError(f"prusa-slicer failed ({r.returncode}): {(r.stderr or r.stdout).strip()[-800:]}")
@@ -60,6 +71,7 @@ def slice_plate(stls: list[Path], out: Path, setup: PrintSetup) -> PlateResult:
     m = re.search(r"^; estimated printing time \(normal mode\) = (.+)$", text, re.M)
     if not m:
         raise SliceError("no time estimate in G-code")
+    check_layers(text, setup)
     text, z = insert_color_change(text, base_h)
     out.write_text(text)
     return PlateResult(out, parse_time(m[1]), z)
