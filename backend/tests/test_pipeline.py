@@ -8,6 +8,7 @@ from nametag.fonts import load_fonts                    # noqa: E402
 from nametag.names import clean_name                    # noqa: E402
 from nametag.plate import pack, BED, MARGIN             # noqa: E402
 from nametag.render import layout                       # noqa: E402
+from nametag.setup import load_setup                    # noqa: E402
 from nametag.shapes import load_shapes                  # noqa: E402
 from nametag.slicer import insert_color_change, parse_time, SliceError  # noqa: E402
 
@@ -53,11 +54,20 @@ def test_pack_stays_on_bed():
                 assert a.x + a.w <= b.x or b.x + b.w <= a.x or a.y + a.h <= b.y or b.y + b.h <= a.y
 
 
-def test_shapes_and_layout():
+@pytest.mark.parametrize("setup_name", ["nozzle040", "nozzle040s", "nozzle025"])
+def test_shapes_and_layout(setup_name):
+    setup = load_setup(setup_name)
     fonts, shapes = load_fonts(), load_shapes()
     assert list(shapes) == ["stadium", "star", "tree", "bell"]
     for s in shapes.values():
         for name in ["A", "MAXIMILIAN", "ÄÖÜ-ß 1234AB"]:
-            lay = layout(name, fonts["baloo"], s)
+            lay = layout(name, fonts["baloo"], s, setup)
             assert lay.fits, (s.id, name, lay.reason)
             assert 1 <= lay.k <= s.text.get("k_max", 1)
+    assert layout("EMMA", fonts["baloo"], shapes["tree"], setup).rot == 90
+
+
+def test_setups_on_layer_boundary():
+    for name in ["nozzle040", "nozzle040s", "nozzle025"]:
+        s = load_setup(name)
+        assert s.profile.exists()

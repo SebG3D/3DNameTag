@@ -1,0 +1,9 @@
+{
+  "_comment": "Print setup per nozzle. 'active' is used by backend and tools. Sizes in mm. scale shrinks every shape and its text (not the hole). base_h must be first_layer_height + n * layer_height of the profile; text_overlap = one layer.",
+  "active": "nozzle025",
+  "setups": {
+    "nozzle040": {"profile": "coreone_040.ini", "scale": 1.0,  "min_text_size": 6.0, "base_h": 2.4, "text_h": 1.2, "text_overlap": 0.2,  "hole_d": 4.5, "text_grow": 0},
+    "nozzle040s": {"profile": "coreone_040.ini", "scale": 0.75, "min_text_size": 4.5, "base_h": 1.8, "text_h": 1.0, "text_overlap": 0.2,  "hole_d": 4.0, "text_grow": 0},
+    "nozzle025": {"profile": "coreone_025.ini", "scale": 0.75, "min_text_size": 4.5, "base_h": 1.7, "text_h": 0.9, "text_overlap": 0.15, "hole_d": 4.0, "text_grow": 0}
+  }
+}

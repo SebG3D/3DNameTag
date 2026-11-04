@@ -1,7 +1,13 @@
 {
   "id": "stadium",
-  "label": {"de": "Anhänger", "en": "Tag"},
+  "label": {
+    "de": "Anhänger",
+    "en": "Tag"
+  },
   "order": 10,
   "mode": "grow",
-  "text": {"size": 10, "max_w": 85, "min_size": 6}
+  "text": {
+    "size": 10,
+    "max_w": 85
+  }
 }

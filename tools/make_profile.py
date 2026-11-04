@@ -6,14 +6,16 @@ The CLI can only use system presets that are installed in a GUI datadir; a
 flat file in the repo is reproducible on the Pi instead. A config exported from
 the PrusaSlicer GUI (File > Export > Export Config) can replace the output.
 
-  python3 tools/make_profile.py            # defaults below -> slicer/coreone.ini
+  python3 tools/make_profile.py            # 0.4 nozzle -> slicer/profiles/coreone_040.ini
+  python3 tools/make_profile.py --printer "Prusa CORE One 0.25 nozzle" \
+      --print "0.15mm SPEED @COREONE 0.25" -o slicer/profiles/coreone_025.ini
 """
 import argparse
 import re
 from pathlib import Path
 
 BUNDLE = Path("/usr/share/PrusaSlicer/profiles/PrusaResearch.ini")
-OUT = Path(__file__).resolve().parents[1] / "slicer" / "coreone.ini"
+OUT = Path(__file__).resolve().parents[1] / "slicer" / "profiles" / "coreone_040.ini"
 
 # Booth overrides on top of the system presets.
 OVERRIDES = {

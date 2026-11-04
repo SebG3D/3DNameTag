@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import SCAD_DIR
 from .fonts import Font
+from .setup import PrintSetup
 from .shapes import Shape
 
 OPENSCAD = shutil.which("openscad") or "openscad"
@@ -23,16 +24,21 @@ class RenderError(RuntimeError):
 @dataclass(frozen=True)
 class Layout:
     fits: bool
-    size: float      # font size for text()
-    tx: float        # text translation (bbox centred in the text box)
+    size: float      # font size in design units (printed: size * setup.scale)
+    tx: float        # centres the text bbox at the origin (text frame)
     ty: float
-    tw: float        # text bbox at that size
+    rot: float       # text rotation in degrees (0 or 90)
+    cx: float        # text box centre on the tag (design units, incl. k)
+    cy: float
+    tw: float        # text bbox on the tag (design units)
     th: float
     k: float         # outline scale (fit shapes)
+    printed_size: float
     reason: str = ""
 
     def defines(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if k in ("size", "tx", "ty", "tw", "th", "k")}
+        return {k: v for k, v in asdict(self).items()
+                if k in ("size", "tx", "ty", "rot", "cx", "cy", "tw", "th", "k")}
 
 
 def _wrapper(font: Font, shape: Shape | None) -> str:
@@ -84,7 +90,7 @@ def _measure_cached(name: str, font: Font) -> tuple[float, float, float, float]:
     with tempfile.TemporaryDirectory(prefix="measure_") as tmp:
         out = Path(tmp) / "text.svg"
         run_openscad(font, None, out, {"name": name, "font": font.openscad,
-                                       "size": MEASURE_SIZE, "part": "text2d"})
+                                       "size": MEASURE_SIZE, "part": "measure2d"})
         return svg_bbox(out.read_text())
 
 
@@ -93,25 +99,35 @@ def measure_text(name: str, font: Font) -> tuple[float, float, float, float]:
     return _measure_cached(name, font)
 
 
-def layout(name: str, font: Font, shape: Shape) -> Layout:
+def layout(name: str, font: Font, shape: Shape, setup: PrintSetup) -> Layout:
+    """Text size, position and outline scale for one tag (design units)."""
     x0, y0, x1, y1 = measure_text(name, font)
     w10, h10 = x1 - x0, y1 - y0
     t = shape.text
+    rot = float(t.get("rotate", 0))
+    if rot % 180 == 90:
+        ow, oh = h10, w10               # text bbox as it lies on the tag
+    elif rot % 180 == 0:
+        ow, oh = w10, h10
+    else:
+        raise ValueError(f"{shape.id}: rotate must be a multiple of 90")
     target = t["size"]
     if shape.mode == "grow":
         k, cx, cy = 1.0, 0.0, 0.0
-        size = min(target, t["max_w"] * MEASURE_SIZE / w10)
+        size = min(target, t["max_w"] * MEASURE_SIZE / ow)
     else:
         box = t["box"]
-        fit1 = min(box["w"] / w10, box["h"] / h10) * MEASURE_SIZE   # size that fits at k=1
+        fit1 = min(box["w"] / ow, box["h"] / oh) * MEASURE_SIZE   # size that fits at k=1
         k = min(t["k_max"], max(1.0, target / fit1))
         size = min(target, fit1 * k)
         cx, cy = box["cx"] * k, box["cy"] * k
-    s = size / MEASURE_SIZE
-    fits = size >= t["min_size"] - 1e-6
-    reason = "" if fits else f"text too long for {shape.id} (size {size:.1f} < {t['min_size']})"
-    return Layout(fits, round(size, 3), round(cx - (x0 + x1) / 2 * s, 3), round(cy - (y0 + y1) / 2 * s, 3),
-                  round(w10 * s, 3), round(h10 * s, 3), round(k, 4), reason)
+    sc = size / MEASURE_SIZE
+    printed = size * setup.scale
+    fits = printed >= setup.min_text_size - 1e-6
+    reason = "" if fits else f"text too long for {shape.id} ({printed:.1f} mm < {setup.min_text_size} mm)"
+    r = lambda v: round(v, 4)
+    return Layout(fits, r(size), r(-(x0 + x1) / 2 * sc), r(-(y0 + y1) / 2 * sc), rot, r(cx), r(cy),
+                  r(ow * sc), r(oh * sc), r(k), r(printed), reason)
 
 
 def _stl_facets(path: Path) -> str:
@@ -121,14 +137,14 @@ def _stl_facets(path: Path) -> str:
     return body[start:end]
 
 
-def render_tag(name: str, font: Font, shape: Shape, out_dir: Path, stem: str = "tag") -> dict:
+def render_tag(name: str, font: Font, shape: Shape, setup: PrintSetup, out_dir: Path, stem: str = "tag") -> dict:
     """Render base + text STLs and the joined tag STL (two shells, the text
     overlapping the base by one layer). Returns paths and the layout."""
-    lay = layout(name, font, shape)
+    lay = layout(name, font, shape, setup)
     if not lay.fits:
         raise RenderError(lay.reason)
     out_dir.mkdir(parents=True, exist_ok=True)
-    common = {"name": name, "font": font.openscad, **lay.defines()}
+    common = {"name": name, "font": font.openscad, **lay.defines(), **setup.scad_defines()}
     files = {}
     for part in ("base", "text"):
         p = out_dir / f"{stem}_{part}.stl"
@@ -141,10 +157,10 @@ def render_tag(name: str, font: Font, shape: Shape, out_dir: Path, stem: str = "
     return {"layout": lay, "files": files}
 
 
-def render_svg(name: str, font: Font, shape: Shape, out: Path) -> tuple[str, str]:
+def render_svg(name: str, font: Font, shape: Shape, setup: PrintSetup, out: Path) -> tuple[str, str]:
     """2D outline and text as SVG path data (for the kiosk preview and checks)."""
-    lay = layout(name, font, shape)
-    common = {"name": name, "font": font.openscad, **lay.defines()}
+    lay = layout(name, font, shape, setup)
+    common = {"name": name, "font": font.openscad, **lay.defines(), **setup.scad_defines()}
     res = []
     for part in ("outline2d", "text2d"):
         p = out.with_name(f"{out.stem}_{part}.svg")

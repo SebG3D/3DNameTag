@@ -7,7 +7,8 @@ day + text colour via M600). Plan: `docs/PLAN.md`.
 ## Layout
 - `fonts/` – six OFL/Apache fonts: `src/` upstream, `ttf/` + `woff2/` built by `tools/build_fonts.py`, list in `fonts.json`
 - `scad/lib/tag.scad` – tag core (base, text, hole); `scad/shapes/<id>/` – shape plugins (`shape.json` + `shape.scad`, see `backend/nametag/shapes.py`)
-- `slicer/coreone.ini` – flat PrusaSlicer profile (`tools/make_profile.py`, Core One 0.4, 0.20 mm BALANCED, Prusament PLA, plain G-code)
+- `slicer/profiles/` – flat PrusaSlicer profiles (`tools/make_profile.py`): Core One 0.4 (0.20 mm BALANCED) and 0.25 (0.15 mm SPEED), Prusament PLA, plain G-code
+- `config/print.json` – print setups (profile, scale, base/text height, hole, min text size); `active` is used by default, tools take `--setup`
 - `backend/nametag/` – pipeline: names → layout/render (OpenSCAD) → plate packing → slicing + M600
 
 ## Tools

@@ -1,5 +1,5 @@
 // Christmas tree: three trapezoid tiers, trunk, ring on top for the hole.
-// "fit" shape. Name across the bottom (widest) tier.
+// "fit" shape. Name vertical along the middle, from the trunk to the top tier.
 tiers = [   // [y_bottom, y_top, half width bottom, half width top]
     [8, 34, 36, 15],
     [28, 52, 27, 10],

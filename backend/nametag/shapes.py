@@ -4,8 +4,12 @@ Every folder in scad/shapes/ with a shape.json + shape.scad is one shape.
 shape.scad defines  module outline(tw, th)  and  function hole_pos(tw, th).
 shape.json:
   id, label {de, en}, order, mode ("grow" | "fit"),
-  text: grow -> {size, max_w, min_size}
-        fit  -> {size, min_size, box {cx, cy, w, h}, k_max}
+  text: grow -> {size, max_w}
+        fit  -> {size, box {cx, cy, w, h}, k_max}
+        optional rotate: 0 | 90 (vertical, reads bottom to top); box w/h are
+        the box as it lies on the tag.
+All numbers in design units (scaled by config/print.json "scale"); the
+minimum printable text size is global (min_text_size).
 """
 import json
 from dataclasses import dataclass
@@ -37,9 +41,9 @@ def _check(meta: dict, folder: Path) -> None:
         raise ShapeError(f"{folder.name}: id {meta['id']!r} must equal folder name")
     t = meta["text"]
     if meta["mode"] == "grow":
-        keys = {"size", "max_w", "min_size"}
+        keys = {"size", "max_w"}
     elif meta["mode"] == "fit":
-        keys = {"size", "min_size", "box", "k_max"}
+        keys = {"size", "box", "k_max"}
         if set(t.get("box", {})) != {"cx", "cy", "w", "h"}:
             raise ShapeError(f"{folder.name}: text.box needs cx, cy, w, h")
     else:

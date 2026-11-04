@@ -20,4 +20,4 @@ module outline(tw, th) {
     }
 }
 
-function hole_pos(tw, th) = [bar_left(tw) + hole_wall + 4.5 / 2, 0];
+function hole_pos(tw, th) = [bar_left(tw) + hole_wall + $hole / 2, 0];   // $hole from lib/tag.scad
