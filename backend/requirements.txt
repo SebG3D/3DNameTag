@@ -1,2 +1,5 @@
 numpy
 fonttools[woff]
+fastapi
+uvicorn
+httpx

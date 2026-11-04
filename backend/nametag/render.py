@@ -165,6 +165,6 @@ def render_svg(name: str, font: Font, shape: Shape, setup: PrintSetup, out: Path
     for part in ("outline2d", "text2d"):
         p = out.with_name(f"{out.stem}_{part}.svg")
         run_openscad(font, shape, p, {**common, "part": part})
-        res.append(" ".join(re.findall(r'd="([^"]*)"', p.read_text())))
+        res.append(" ".join(" ".join(re.findall(r'd="([^"]*)"', p.read_text())).split()))
         p.unlink()
     return res[0], res[1]

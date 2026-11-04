@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Namensanhänger – Betreuer</title>
+<link rel="stylesheet" href="staff.css">
+</head>
+<body>
+<div id="login" class="card hidden">
+  <h1>Betreuer-Login</h1>
+  <input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+  <button id="loginBtn" class="primary">Anmelden</button>
+  <p id="loginErr" class="err"></p>
+</div>
+
+<main id="app" class="hidden">
+  <header>
+    <span id="printerChip" class="chip">Drucker …</span>
+    <span id="etaAll" class="muted"></span>
+    <button id="pauseBtn" class="small">Pause</button>
+  </header>
+  <p id="pauseReason" class="err hidden"></p>
+
+  <section id="plateCard" class="card"></section>
+
+  <section class="card">
+    <h2>Warteschlange</h2>
+    <div id="waiting"></div>
+  </section>
+
+  <section class="card">
+    <h2>Bestellungen</h2>
+    <div id="orders"></div>
+  </section>
+
+  <section class="card">
+    <h2>Letzte Platten</h2>
+    <div id="plates"></div>
+  </section>
+</main>
+<script src="staff.js"></script>
+</body>
+</html>

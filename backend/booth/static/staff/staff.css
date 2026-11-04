@@ -1,0 +1,41 @@
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.4 system-ui, sans-serif; background: #eef0f5; color: #1c1c28; }
+main { max-width: 720px; margin: 0 auto; padding: 8px; }
+header { display: flex; gap: 8px; align-items: center; padding: 6px 2px; position: sticky; top: 0; background: #eef0f5; z-index: 2; }
+header .muted { flex: 1; }
+h1 { font-size: 22px; margin: 0 0 12px; }
+h2 { font-size: 18px; margin: 0 0 8px; }
+.card { background: #fff; border-radius: 14px; padding: 14px; margin: 10px 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+#login { max-width: 360px; margin: 15vh auto; display: flex; flex-direction: column; gap: 10px; }
+input { font-size: 20px; padding: 12px; border: 2px solid #ccd; border-radius: 10px; }
+button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 12px 16px; background: #e4e4ec; color: #33333f; cursor: pointer; }
+button:active { filter: brightness(.9); }
+button.primary { background: #2e9e44; color: #fff; }
+button.warn { background: #f3c623; color: #222; }
+button.danger { background: #fde3e3; color: #a01818; }
+button.small { padding: 6px 10px; font-size: 14px; }
+.hidden { display: none !important; }
+.err { color: #b00020; font-weight: 600; }
+.muted { color: #666; font-size: 14px; }
+.chip { display: inline-block; padding: 3px 10px; border-radius: 999px; background: #e4e4ec; font-size: 14px; font-weight: 600; }
+.chip.ok { background: #d6f2dc; color: #1d6b2e; }
+.chip.busy { background: #dbe8fb; color: #1b4f9c; }
+.chip.att { background: #ffe08a; color: #6b4a00; }
+.chip.bad { background: #fde3e3; color: #a01818; }
+.dot { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(0,0,0,.25); vertical-align: -4px; margin-right: 4px; }
+.banner { border-radius: 12px; padding: 14px; font-size: 20px; font-weight: 700; margin: 8px 0; }
+.banner.att { background: #ffe08a; animation: blink 1.2s ease-in-out infinite; }
+.banner.ok { background: #d6f2dc; }
+.banner.bad { background: #fde3e3; }
+@keyframes blink { 50% { filter: brightness(1.12); } }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.bar { height: 12px; background: #e4e4ec; border-radius: 6px; overflow: hidden; }
+.bar > div { height: 100%; background: #1e88e5; }
+.order { border-top: 1px solid #eee; padding: 10px 0; }
+.order:first-child { border-top: 0; }
+.order .num { font-size: 26px; font-weight: 800; min-width: 52px; }
+.tag { display: flex; align-items: center; gap: 6px; font-size: 15px; margin: 2px 0 2px 58px; }
+.tag .name { font-weight: 700; }
+svg.map { width: 100%; background: #2a2a33; border-radius: 10px; }
+svg.map text { font: 700 7px system-ui, sans-serif; fill: #fff; }
+svg.map text.num { font-size: 11px; }
