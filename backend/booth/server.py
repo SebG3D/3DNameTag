@@ -88,6 +88,10 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
         return {"preview_id": p.id, "name": p.name, "outline": p.outline, "text": p.text,
                 "size_mm": [p.w_mm, p.h_mm], "estimated_min": round(booth.tag_estimate_s(p.area_mm2) / 60, 1)}
 
+    @app.get("/api/shapes/{shape}/icon")
+    async def shape_icon(shape: str):
+        return await run_in_threadpool(booth.shape_icon, shape)
+
     @app.post("/api/orders")
     def order(req: OrderReq):
         return booth.place_order([t.model_dump() for t in req.tags])

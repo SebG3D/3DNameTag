@@ -149,6 +149,10 @@ def test_api(tmp_path):
         cfg = c.get("/api/config").json()
         assert [s["id"] for s in cfg["shapes"]] == ["stadium", "star", "tree", "bell"]
         assert c.get(cfg["fonts"][0]["url"]).status_code == 200
+        icon = c.get("/api/shapes/tree/icon").json()
+        assert icon["outline"].startswith("M") and icon["text"].startswith("M")
+        assert (tmp_path / "icons" / "tree.json").exists()
+        assert c.get("/api/shapes/bone/icon").json()["error"] == "bad_shape"
         assert c.post("/api/fit", json={"name": "emma", "font": "baloo"}).json()["star"] is True
         p = c.post("/api/preview", json={"name": "emma", "font": "baloo", "shape": "bell"}).json()
         assert p["name"] == "EMMA" and p["estimated_min"] > 0

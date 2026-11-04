@@ -9,6 +9,7 @@ or when staff press "start now". The colour with the oldest waiting tag wins.
 After a plate the printer holds the TEXT colour, so staff confirm "bed cleared
 and base colour loaded" before the next plate starts.
 """
+import json
 import logging
 import re
 import shutil
@@ -34,6 +35,7 @@ from .printer import Printer, PrinterStatus, SimPrinter, make_printer
 log = logging.getLogger("booth")
 
 PREVIEW_TTL_S = 600
+ICON_NAME, ICON_FONT = "EMMA", "baloo"
 START_GRACE_S = 90          # printer may report idle this long after upload
 # Time model, refined after every sliced plate (est = overhead + area * k).
 DEFAULT_PLATE_OVERHEAD_S = 35        # fitted to PrusaSlicer estimates, nozzle040s (2026-11-04)
@@ -157,6 +159,22 @@ class Booth:
                     round(x1 - x0, 1), round(y1 - y0, 1), round(path_area(outline), 1), self.clock())
         self.previews[pid] = p
         return p
+
+    def shape_icon(self, shape: str) -> dict:
+        """Outline + sample text of a shape for the kiosk shape picker.
+        Rendered once (2D only) and cached in the data dir; delete
+        data/icons/ after changing a shape."""
+        if shape not in self.shapes:
+            raise BoothError("bad_shape")
+        cache = self.data / "icons" / f"{shape}.json"
+        if cache.exists():
+            return json.loads(cache.read_text())
+        font = self.fonts.get(ICON_FONT) or next(iter(self.fonts.values()))
+        cache.parent.mkdir(exist_ok=True)
+        outline, text = render_svg(ICON_NAME, font, self.shapes[shape], self.setup, cache.with_suffix(".svg"))
+        icon = {"outline": outline, "text": text}
+        cache.write_text(json.dumps(icon))
+        return icon
 
     def tag_estimate_s(self, area_mm2: float) -> float:
         """Slicer-time share of one tag (without heating / colour change)."""

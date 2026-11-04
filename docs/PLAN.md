@@ -79,6 +79,8 @@ shapes/
   (active `nozzle040s`: scale 0.75, base 1.0 mm in 0.2 layers, text 2 x 0.15 mm), own plate packing, 3MF
   layer range, M600 insert. Test prints pending.
 - P2 done (sim only): backend, staff page, simulated printer; PrusaLink client written, untested.
+- P3 done (v1): kiosk frontend in `frontend/` (2D SVG preview from backend paths, multi-tag orders, idle
+  guard, offline screen, staff corner). Tested headless against the sim backend; not yet on the Pi touchscreen.
 - After a plate the printer holds the text colour: staff reload the base colour before the next plate.
 
 ## Phases

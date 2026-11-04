@@ -11,6 +11,7 @@ day + text colour via M600). Plan: `docs/PLAN.md`.
 - `config/print.json` – print setups (profile, scale, base/text height, hole, min text size); `active` is used by default, tools take `--setup`
 - `backend/nametag/` – pipeline: names → layout/render (OpenSCAD) → plate packing (3MF with text layer range) → slicing + M600
 - `backend/booth/` – booth backend: `service.py` (previews, orders, payment, plate scheduler, time model), `db.py` (SQLite), `printer.py` (simulator + PrusaLink), `server.py` (FastAPI), `static/staff/` (staff page for the phone)
+- `frontend/` – kiosk app (Vite + React + TS), built to `frontend/dist/`, served by the backend at `/kiosk/`
 - `config/booth.json` – booth settings (colours, prices, plate size/wait, PIN, printer)
 
 ## Tools
@@ -36,6 +37,18 @@ Flow: order → first tag queued, extra tags wait for "Bezahlt" → tags grouped
 `plate.max_tags` are waiting, after `plate.max_wait_min`, or "Jetzt starten" → colour change: staff load the
 text colour and confirm on the printer → plate done: take tags off (plate map with order numbers), load the
 base colour again, tap "Platte leer" → next plate.
+
+## Kiosk frontend
+```
+cd frontend && npm install
+npm run build                  # -> frontend/dist, backend serves it at /kiosk/ (restart backend after the first build)
+npm run dev                    # dev server on :5173, proxies /api and /fonts to the backend on :8080
+```
+Flow: start → name (own keyboard) → font → shape (shapes that don't fit the name are greyed out) →
+text colour (real preview from the backend, rendered as SVG) → review ("+ Noch einen Anhänger", price) →
+order number + ETA. Idle 90 s → "Bist du noch da?" → reset. Backend unreachable → pause screen with auto-retry.
+5 taps in the top-left corner within 3 s open the staff page.
+Shape icons come from `GET /api/shapes/<id>/icon` (rendered once, cached in `backend/data/icons/` – delete after changing a shape).
 
 ## New shape
 Copy a folder in `scad/shapes/`, keep the folder name = `id` in `shape.json`,
