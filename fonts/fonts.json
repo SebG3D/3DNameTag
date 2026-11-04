@@ -1,0 +1,8 @@
+[
+  {"id": "baloo",    "label": "Baloo 2",   "src": "baloo2/Baloo2[wght].ttf",          "axes": {"wght": 700}, "openscad": "Baloo 2:style=Bold"},
+  {"id": "bangers",  "label": "Bangers",   "src": "bangers/Bangers-Regular.ttf",                             "openscad": "Bangers:style=Regular"},
+  {"id": "fredoka",  "label": "Fredoka",   "src": "fredoka/Fredoka[wdth,wght].ttf",   "axes": {"wght": 600, "wdth": 100}, "openscad": "Fredoka:style=SemiBold"},
+  {"id": "pacifico", "label": "Pacifico",  "src": "pacifico/Pacifico-Regular.ttf",                           "openscad": "Pacifico:style=Regular"},
+  {"id": "titan",    "label": "Titan One", "src": "titanone/TitanOne-Regular.ttf",                           "openscad": "Titan One:style=Regular"},
+  {"id": "chewy",    "label": "Chewy",     "src": "chewy/Chewy-Regular.ttf",                                 "openscad": "Chewy:style=Regular"}
+]

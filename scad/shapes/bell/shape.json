@@ -1,0 +1,7 @@
+{
+  "id": "bell",
+  "label": {"de": "Glocke", "en": "Bell"},
+  "order": 40,
+  "mode": "fit",
+  "text": {"size": 9, "min_size": 6, "box": {"cx": 0, "cy": 21, "w": 44, "h": 10}, "k_max": 1.4}
+}
