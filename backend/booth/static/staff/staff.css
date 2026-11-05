@@ -68,3 +68,4 @@ header { flex-wrap: wrap; }
 a.btnlink { font-weight: 600; text-decoration: none; color: #33333f; background: #e4e4ec; border-radius: 10px; padding: 8px 12px; font-size: 15px; }
 table.days { width: 100%; border-collapse: collapse; font-size: 15px; }
 table.days td, table.days th { text-align: left; padding: 4px; border-top: 1px solid #eee; }
+button:disabled { opacity: .4; cursor: default; }

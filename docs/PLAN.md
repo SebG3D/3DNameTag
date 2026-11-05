@@ -81,6 +81,9 @@ shapes/
 - P2 done (sim only): backend, staff page, simulated printer; PrusaLink client written, untested.
 - P3 done (v1): kiosk frontend in `frontend/` (2D SVG preview from backend paths, multi-tag orders, idle
   guard, offline screen, staff corner). Tested headless against the sim backend; not yet on the Pi touchscreen.
+- 2026-11-05: PrusaLink client checked against the official spec + fake printer (tests), day
+  operations (stats, close day, CSV, backups), forecast-based pickup times, day simulator,
+  Pi install (`deploy/pi/`) + self-check. Simulation: ~18 tags per printer hour.
 - After a plate the printer holds the text colour: staff reload the base colour before the next plate.
 
 ## Phases

@@ -8,6 +8,8 @@ import logging
 import os
 import re
 import secrets
+import subprocess
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -173,6 +175,36 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
         name = f"namensanhaenger-{day or 'alle'}.csv"
         return Response("\ufeff" + booth.export_csv(day or None), media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    # ---------------- system (Pi only: BOOTH_ALLOW_SYSTEM=1, sudoers rule from deploy/pi/install.sh)
+    allow_system = os.environ.get("BOOTH_ALLOW_SYSTEM") == "1"
+
+    @app.get("/api/staff/system", dependencies=[Depends(staff)])
+    def system_info():
+        return {"allowed": allow_system, "time": time.time()}
+
+    @app.post("/api/staff/system/time", dependencies=[Depends(staff)])
+    def set_time(req: dict = Body(...)):
+        if not allow_system:
+            raise HTTPException(403, "not allowed on this machine")
+        t = req.get("time")
+        if not isinstance(t, (int, float)) or not 1.7e9 < t < 4e9:
+            raise HTTPException(400, "time: unix seconds")
+        r = subprocess.run(["sudo", "-n", "/usr/bin/date", "-s", f"@{int(t)}"], capture_output=True, text=True)
+        if r.returncode:
+            raise HTTPException(500, f"date failed: {r.stderr.strip()[:200]}")
+        subprocess.run(["sudo", "-n", "/usr/sbin/hwclock", "-w"], capture_output=True)   # keep it in the RTC
+        return {"time": time.time()}
+
+    @app.post("/api/staff/system/{action}", dependencies=[Depends(staff)])
+    def power(action: str):
+        if not allow_system:
+            raise HTTPException(403, "not allowed on this machine")
+        if action not in ("poweroff", "reboot"):
+            raise HTTPException(404)
+        booth.backup(tag=action)
+        subprocess.Popen(["sudo", "-n", "/usr/bin/systemctl", action])
+        return {"ok": True}
 
     @app.get("/api/staff/plates/{pid}/gcode", dependencies=[Depends(staff)])
     def gcode(pid: int):

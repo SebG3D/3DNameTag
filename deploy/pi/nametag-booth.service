@@ -1,0 +1,25 @@
+# Name tag booth backend; installed by install.sh (@...@ filled in)
+[Unit]
+Description=3D name tag booth (kiosk + staff backend)
+After=network-online.target local-fs.target
+Wants=network-online.target
+RequiresMountsFor=@DATA@
+
+[Service]
+User=@USER@
+WorkingDirectory=@REPO@/backend
+EnvironmentFile=-/etc/default/nametag-booth
+Environment=BOOTH_DATA=@DATA@/nametag
+Environment=BOOTH_CONFIG=@DATA@/nametag/booth.json
+Environment=BOOTH_ALLOW_SYSTEM=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+# OpenSCAD / PrusaSlicer caches; on the read-only root this is a RAM disk
+Environment=HOME=/tmp/nametag-home
+ExecStartPre=/usr/bin/mkdir -p /tmp/nametag-home
+ExecStart=@REPO@/backend/.venv/bin/python -m booth.server --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=2
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

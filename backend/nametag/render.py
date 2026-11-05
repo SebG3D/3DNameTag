@@ -1,5 +1,6 @@
 """OpenSCAD rendering: text measuring, layout, tag STL/SVG export."""
 import re
+import os
 import shutil
 import subprocess
 import tempfile
@@ -12,7 +13,7 @@ from .fonts import Font
 from .setup import PrintSetup
 from .shapes import Shape
 
-OPENSCAD = shutil.which("openscad") or "openscad"
+OPENSCAD = os.environ.get("OPENSCAD") or shutil.which("openscad") or "openscad"
 MEASURE_SIZE = 10.0
 _NUM = re.compile(r"-?\d+(?:\.\d+)?(?:e-?\d+)?")
 

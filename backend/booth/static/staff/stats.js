@@ -47,6 +47,15 @@ function renderStats(st) {
     <button class="small" id="backupBtn">Jetzt sichern</button> <span id="backupMsg" class="muted"></span>
   </section>
 
+  <section class="card" id="systemCard"><h2>Kiosk-Rechner</h2>
+    <p class="muted" id="sysInfo"></p>
+    <div class="row">
+      <button class="small" id="syncBtn">Uhrzeit vom Handy übernehmen</button>
+      <button class="small" id="rebootBtn">Neu starten</button>
+      <button class="danger small" id="offBtn">Herunterfahren</button>
+    </div>
+  </section>
+
   <section class="card"><h2>Tag abschließen</h2>
     <p>Am Ende des Standtags. Danach ist die Liste leer; die Abholnummern fangen am nächsten Tag ohnehin bei 1 an.</p>
     <ul>
@@ -59,6 +68,19 @@ function renderStats(st) {
     <span id="closeMsg" class="muted"></span>
   </section>`;
 
+  api("/api/staff/system").then((sys) => {
+    const t = new Date(sys.time * 1000).toLocaleString("de-DE");
+    $("sysInfo").textContent = sys.allowed ? `Uhrzeit des Kiosk-Rechners: ${t}` : "Nur auf dem Kiosk-Pi verfügbar.";
+    for (const id of ["syncBtn", "rebootBtn", "offBtn"]) $(id).disabled = !sys.allowed;
+  }).catch(() => {});
+  $("syncBtn").onclick = async () => { await syncClock(); loadStats(); };
+  const power = (action, text) => async () => {
+    if (!confirm(text)) return;
+    try { await api(`/api/staff/system/${action}`, { method: "POST" }); $("sysInfo").textContent = "OK – Sicherung angelegt, Rechner " + (action === "reboot" ? "startet neu" : "fährt herunter") + " …"; }
+    catch (e) { alert(e.message); }
+  };
+  $("rebootBtn").onclick = power("reboot", "Kiosk-Rechner neu starten?");
+  $("offBtn").onclick = power("poweroff", "Kiosk-Rechner herunterfahren? Danach Stecker ziehen ist sicher.");
   $("backupBtn").onclick = async () => {
     try { const r = await api("/api/staff/backup", { method: "POST" }); $("backupMsg").textContent = "gesichert ✓"; loadStats(); }
     catch (e) { $("backupMsg").textContent = e.message; }

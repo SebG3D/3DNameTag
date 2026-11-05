@@ -21,7 +21,11 @@ backend/.venv/bin/python -m pytest -q backend/tests
 python3 tools/check_shapes.py sheet.png           # contact sheet of all shapes/fonts
 python3 tools/make_plate.py -o out/ EMMA:baloo:stadium OMA:titan:tree
 python3 tools/make_plate.py -o out/ --all-shapes EMMA
+backend/.venv/bin/python tools/selfcheck.py      # is this machine booth-ready? (tools, render, slice, printer)
+backend/.venv/bin/python tools/simulate_day.py   # a whole booth day in fast-forward: waits, ETA accuracy, capacity
+backend/.venv/bin/python -m booth.fakelink       # fake Core One (PrusaLink) on :8081 for dry runs
 ```
+Pi setup (kiosk, service, network, read-only): `deploy/pi/README.md`.
 Needs `openscad`, `prusa-slicer`, `rsvg-convert` (contact sheet only).
 
 ## Backend
@@ -36,6 +40,9 @@ picks changes up the next time it is on its start screen. `--config <file>` / `B
 Kiosk API: `GET /api/config`, `GET /api/status`, `POST /api/fit`, `POST /api/preview`, `POST /api/orders`.
 For the real printer set `"printer": {"type": "prusalink", "host": ..., "api_key": ...}` – a USB stick must be
 in the printer (upload target), the PrusaLink client is not yet tested on hardware.
+
+Staff page "📊 Tag": today's numbers (orders, printed, money, colours), CSV export, backups
+(hourly, `data/backups/`), "Tag abschließen" at the end of the day, clock + shutdown on the Pi.
 
 Flow: order → first tag queued, extra tags wait for "Bezahlt" → tags grouped by text colour → plate when
 `plate.max_tags` are waiting, after `plate.max_wait_min`, or "Jetzt starten" → colour change: staff load the

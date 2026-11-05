@@ -173,6 +173,9 @@ def test_api(tmp_path):
         assert r.status_code == 200 and "EMMA" in r.text and "attachment" in r.headers["content-disposition"]
         assert c.get("/api/staff/export.csv?day=x", headers=h).status_code == 400
         assert c.post("/api/staff/backup", headers=h).json()["file"].endswith(".sqlite")
+        assert c.get("/api/staff/system", headers=h).json()["allowed"] is False      # only with BOOTH_ALLOW_SYSTEM=1
+        assert c.post("/api/staff/system/time", headers=h, json={"time": 1.8e9}).status_code == 403
+        assert c.post("/api/staff/system/poweroff", headers=h).status_code == 403
         assert c.get("/staff/").status_code == 200
 
 

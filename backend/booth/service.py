@@ -106,6 +106,8 @@ class Booth:
         self.s_per_mm2 = self.db.get_state("s_per_mm2", DEFAULT_S_PER_MM2)
         # real plate duration / slicer estimate (heating, M600 wait), learned
         self.real_factor = self.db.get_state("real_factor", 1.2)
+        # real wait / forecast of finished orders (plates fill up with later arrivals), learned
+        self.eta_factor = self.db.get_state("eta_factor", 1.1)
         self._stop = threading.Event()
         self._thread = None
         self._recover()
@@ -228,27 +230,59 @@ class Booth:
             shutil.rmtree(p.stl.parent, ignore_errors=True)
         price = self.cfg.price_cents(len(tags))
         order = self.db.create_order(tags, price, self.cfg.free_tags, self.clock())
-        eta = self.clock() + self.eta_s()
+        # whole order (kids wait for all their tags); the forecast does not know
+        # later arrivals, so it is scaled by the learned eta_factor, +2 min,
+        # rounded up to 5 min (early is fine, late is not)
+        raw = self.eta_s([t["id"] for t in order["tags"]])
+        with self.db.tx() as c:
+            c.execute("UPDATE orders SET eta_raw=? WHERE id=?", (raw, order["id"]))
+        eta = self.clock() + raw * self.eta_factor + 120
+        eta = -(-eta // 300) * 300
         return {"order_id": order["id"], "number": order["number"], "tags": len(tags),
                 "price_cents": price, "needs_payment": price > 0,
                 "eta": time.strftime("%H:%M", time.localtime(eta)), "eta_s": int(eta - self.clock())}
 
-    def eta_s(self) -> float:
-        """Rough time until everything open now is printed (incl. staff changes)."""
-        c = self.cfg
+    def forecast(self) -> dict[int, float]:
+        """Seconds from now until each queued tag is printed: replays the plate
+        policy (oldest colour first, full plate or max wait) with the learned
+        time model. Held (unpaid) tags count as if paid now (staff usually
+        take the money within minutes)."""
+        c, now = self.cfg, self.clock()
         t = 0.0
         plate = self.db.active_plate()
         if plate:
             st = self.last_status
-            remain = st.remaining_s if st.remaining_s is not None and plate["status"] != "building" \
-                else (plate["est_s"] or 0)
-            t += remain + c.plate_change_min * 60
-        waiting = self.db.q("SELECT area_mm2 FROM tags WHERE status IN ('queued','held')")
-        if waiting:
-            plates = -(-len(waiting) // c.plate_max_tags)
-            slicer = sum(self.tag_estimate_s(w["area_mm2"]) for w in waiting) + plates * self.plate_overhead_s
-            t += slicer * self.real_factor + plates * c.plate_change_min * 60
-        return t
+            remain = st.remaining_s if st.remaining_s is not None and plate["status"] in ("printing", "color_change") \
+                else (plate["est_s"] or 0) * (0 if plate["status"] == "printed" else 1)
+            t += remain * self.real_factor + c.plate_change_min * 60
+        groups: dict[str, list[dict]] = {}
+        waiting = self.db.q("SELECT id, text_color, area_mm2, COALESCE(queued_at, ?) AS queued_at FROM tags "
+                            "WHERE status IN ('queued','held') ORDER BY COALESCE(queued_at, ?), id", now, now)
+        for tag in waiting:
+            groups.setdefault(tag["text_color"], []).append(tag)
+        done: dict[int, float] = {}
+        wait_s = c.plate_max_wait_min * 60
+        while groups:
+            def ready_at(tags):                       # when this colour may start (relative)
+                return 0.0 if len(tags) >= c.plate_max_tags else max(0.0, tags[0]["queued_at"] + wait_s - now)
+            start = max(t, min(ready_at(g) for g in groups.values()))
+            ready = [(g[0]["queued_at"], col) for col, g in groups.items() if ready_at(g) <= start]
+            col = min(ready)[1]
+            batch, groups[col] = groups[col][:c.plate_max_tags], groups[col][c.plate_max_tags:]
+            if not groups[col]:
+                del groups[col]
+            dur = (self.plate_overhead_s + sum(self.tag_estimate_s(x["area_mm2"]) for x in batch)) * self.real_factor
+            t = start + dur
+            for x in batch:
+                done[x["id"]] = t
+            t += c.plate_change_min * 60
+        return done
+
+    def eta_s(self, tag_ids: list[int] | None = None) -> float:
+        """Time until the given tags (default: all queued) are printed."""
+        f = self.forecast()
+        vals = [f[i] for i in tag_ids if i in f] if tag_ids is not None else list(f.values())
+        return max(vals, default=0.0)
 
     def public_status(self) -> dict:
         plate = self.db.active_plate()
@@ -313,6 +347,7 @@ class Booth:
         elif st.state == "finished":
             now = self.clock()
             self.db.plate_status(pid, "printed", finished=now)
+            self._learn_eta(pid, now)
             if plate["started"] and plate["est_s"]:
                 f = (now - plate["started"]) / plate["est_s"]
                 if 0.8 < f < 3:
@@ -355,6 +390,17 @@ class Booth:
             log.exception("plate %d failed", pid)
             self.db.plate_status(pid, "failed", error=str(e)[:500])
             self._pause("Platte fehlgeschlagen")
+
+    def _learn_eta(self, pid: int, now: float) -> None:
+        """Orders completed by this plate: compare real wait with the forecast."""
+        for o in self.db.q(
+                "SELECT DISTINCT o.id, o.created, o.eta_raw FROM orders o JOIN tags t ON t.order_id=o.id "
+                "WHERE t.plate_id=? AND o.eta_raw > 300 AND NOT EXISTS (SELECT 1 FROM tags x WHERE "
+                "x.order_id=o.id AND x.status IN ('held','queued','plated'))", pid):
+            f = (now - o["created"]) / o["eta_raw"]
+            if 0.5 < f < 4:
+                self.eta_factor = round(min(2.5, max(1.0, 0.85 * self.eta_factor + 0.15 * f)), 3)
+        self.db.set_state("eta_factor", self.eta_factor)
 
     def _learn_time(self, est_s: int, tags: list[dict]) -> None:
         area = sum(t["area_mm2"] for t in tags)
@@ -403,7 +449,8 @@ class Booth:
                 "orders": orders, "plates": plates, "waiting_by_color": waiting,
                 "held": self.db.q1("SELECT COUNT(*) AS n FROM tags WHERE status='held'")["n"],
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
-                "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day()}
+                "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day(),
+                "server_time": time.time()}
 
     def staff_paid(self, oid: int) -> None:
         self.db.mark_paid(oid, self.clock())

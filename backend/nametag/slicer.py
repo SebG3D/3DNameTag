@@ -1,5 +1,6 @@
 """Plate slicing with PrusaSlicer CLI + M600 colour change at the text layer."""
 import re
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from .setup import PrintSetup
 
-PRUSA_SLICER = shutil.which("prusa-slicer") or "prusa-slicer"
+PRUSA_SLICER = os.environ.get("PRUSA_SLICER") or shutil.which("prusa-slicer") or "prusa-slicer"
 COLOR_CHANGE = "M600 ; booth: text colour\nG1 E0.3 F1500 ; prime after colour change\n"
 
 

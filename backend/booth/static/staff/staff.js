@@ -160,6 +160,23 @@ function render() {
   $("pauseReason").textContent = data.paused ? "Warteschlange pausiert" + (data.pause_reason ? ": " + data.pause_reason : "") : "";
   $("pauseReason").classList.toggle("hidden", !data.paused);
   renderPlate(); renderWaiting(); renderOrders(); renderPlates();
+  renderClock();
+}
+
+// The Pi has no internet at the booth: its clock decides pickup numbers and times.
+function renderClock() {
+  const off = Math.round((data.server_time * 1000 - Date.now()) / 60000);
+  const el = $("clockBanner");
+  el.classList.toggle("hidden", Math.abs(off) < 3);
+  if (Math.abs(off) >= 3) {
+    el.innerHTML = `Uhrzeit des Kiosk-Rechners geht ${Math.abs(off)} min ${off > 0 ? "vor" : "nach"}!
+      <button class="small" onclick="syncClock()">Uhrzeit vom Handy übernehmen</button>`;
+  }
+}
+
+async function syncClock() {
+  try { await api("/api/staff/system/time", { method: "POST", body: JSON.stringify({ time: Date.now() / 1000 }) }); refresh(); }
+  catch (e) { if (e.message !== "login") alert("Geht nur auf dem Kiosk-Pi: " + e.message); }
 }
 
 async function refresh() {

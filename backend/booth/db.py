@@ -70,6 +70,9 @@ class DB:
         self.con.execute("PRAGMA journal_mode=WAL")
         self.con.execute("PRAGMA foreign_keys=ON")
         self.con.executescript(SCHEMA)
+        cols = {r[1] for r in self.con.execute("PRAGMA table_info(orders)")}
+        if "eta_raw" not in cols:                      # forecast at order time (s), for learning
+            self.con.execute("ALTER TABLE orders ADD COLUMN eta_raw REAL")
         self.lock = threading.RLock()
 
     @contextmanager
