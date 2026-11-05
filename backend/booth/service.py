@@ -24,11 +24,11 @@ from nametag.fonts import load_fonts
 from nametag.names import NAME_MAX, clean_name
 from nametag.plate import build_plate
 from nametag.render import layout, render_svg, render_tag
-from nametag.setup import load_setup
+from nametag.setup import list_setups, load_setup
 from nametag.shapes import load_shapes
 from nametag.slicer import slice_plate
 
-from .config import BoothConfig
+from .config import BoothConfig, ConfigError, config_dict, parse_config, save_config
 from .db import DB
 from .printer import Printer, PrinterStatus, SimPrinter, make_printer
 
@@ -85,7 +85,9 @@ class Booth:
     def __init__(self, cfg: BoothConfig, printer: Printer | None = None, setup_name: str | None = None,
                  clock=time.time):
         self.cfg, self.clock = cfg, clock
-        self.setup = load_setup(setup_name)
+        self.setup_locked = setup_name is not None          # --setup on the command line wins
+        self.setup = load_setup(setup_name or cfg.print_setup)
+        self.config_rev = 1                                 # kiosk reloads when this changes
         self.fonts, self.shapes = load_fonts(), load_shapes()
         self.data = cfg.data_dir
         for d in ("previews", "tags", "plates"):
@@ -116,8 +118,12 @@ class Booth:
             "event_name": c.event_name,
             "base_color": c.base_color,
             "text_colors": c.text_colors,
-            "fonts": [{"id": f.id, "label": f.label, "url": f"/fonts/{f.id}.woff2"} for f in self.fonts.values()],
-            "shapes": [{"id": s.id, "label": s.label} for s in self.shapes.values()],
+            "fonts": [{"id": f.id, "label": f.label, "url": f"/fonts/{f.id}.woff2"} for f in self.fonts.values()
+                      if f.id not in c.disabled_fonts],
+            "shapes": [{"id": s.id, "label": s.label} for s in self.shapes.values()
+                       if s.id not in c.disabled_shapes],
+            "kiosk": {"idle_s": c.kiosk_idle_s, "sound": c.kiosk_sound},
+            "rev": self.config_rev,
             "pricing": {"free_tags": c.free_tags, "price_per_extra_cents": c.price_per_extra_cents},
             "max_tags_per_order": c.max_tags_per_order,
             "name_max": NAME_MAX,
@@ -250,7 +256,7 @@ class Booth:
         st = self.last_status.state
         return {"printer": st, "current_plate": current,
                 "queue_length": self.open_tag_count(), "queue_full": self.queue_full(),
-                "paused": bool(self.db.get_state("paused", False))}
+                "paused": bool(self.db.get_state("paused", False)), "config_rev": self.config_rev}
 
     # ------------------------------------------------------------ scheduler
     def pick_next(self, force_color: str | None = None) -> tuple[str, list[dict]] | None:
@@ -436,6 +442,104 @@ class Booth:
         if not isinstance(self.printer, SimPrinter):
             raise BoothError("not_sim")
         self.printer.resume()
+
+    # ------------------------------------------------------------ settings
+    SECRETS = ("api_key", "password")
+
+    def staff_settings(self) -> dict:
+        d = config_dict(self.cfg)
+        d.pop("_comment")
+        d["staff_pin"] = ""                                   # never sent out; empty = unchanged
+        p = d["printer"] = dict(d["printer"])
+        for k in self.SECRETS:
+            p[f"has_{k}"] = bool(p.pop(k, ""))                # empty = unchanged
+        active, setups = list_setups()
+        in_use = {t["text_color"] for t in self.db.q(
+            "SELECT DISTINCT text_color FROM tags WHERE status IN ('held','queued','plated')")}
+        return {"settings": d,
+                "fonts": [{"id": f.id, "label": f.label} for f in self.fonts.values()],
+                "shapes": [{"id": s.id, "label": s.label["de"]} for s in self.shapes.values()],
+                "setups": [{"name": n, "scale": e["scale"], "min_text_size": e["min_text_size"],
+                            "profile": e["profile"], "default": n == active} for n, e in setups.items()],
+                "current_setup": self.setup.name, "setup_locked": self.setup_locked,
+                "pin_from_env": self.cfg.file_pin is not None,
+                "open_tags": self.open_tag_count(), "plate_active": self.db.active_plate() is not None,
+                "colors_in_use": sorted(in_use)}
+
+    def _merge_settings(self, d: dict) -> dict:
+        """Staff page dict -> full booth.json dict (secrets and PIN: empty = keep)."""
+        d = {k: v for k, v in d.items() if k != "_comment"}
+        p = dict(d.get("printer") or {})
+        for k in self.SECRETS:
+            p.pop(f"has_{k}", None)
+            if not p.get(k):
+                p[k] = self.cfg.printer.get(k, "")
+        d["printer"] = p
+        if not str(d.get("staff_pin") or "").strip():
+            d["staff_pin"] = self.cfg.file_pin or self.cfg.staff_pin
+        return d
+
+    def staff_update_settings(self, d: dict) -> dict:
+        try:
+            new = parse_config(self._merge_settings(d))
+        except ConfigError as e:
+            raise BoothError("bad_config", str(e)) from None
+        old = self.cfg
+        if old.file_pin is not None:
+            if new.staff_pin != old.file_pin:
+                raise BoothError("bad_config", "PIN kommt aus BOOTH_PIN und kann hier nicht geändert werden")
+            new.file_pin, new.staff_pin = old.file_pin, old.staff_pin
+        if unknown := set(new.disabled_fonts) - set(self.fonts):
+            raise BoothError("bad_config", f"unbekannte Schrift {sorted(unknown)}")
+        if unknown := set(new.disabled_shapes) - set(self.shapes):
+            raise BoothError("bad_config", f"unbekannte Form {sorted(unknown)}")
+        if not set(self.fonts) - set(new.disabled_fonts) or not set(self.shapes) - set(new.disabled_shapes):
+            raise BoothError("bad_config", "mindestens eine Schrift und eine Form muss an sein")
+        with self.lock:
+            removed = {c["id"] for c in old.text_colors} - {c["id"] for c in new.text_colors}
+            in_use = removed & {t["text_color"] for t in self.db.q(
+                "SELECT DISTINCT text_color FROM tags WHERE status IN ('held','queued','plated')")}
+            if in_use:
+                names = ", ".join(old.color(i)["name"] for i in sorted(in_use))
+                raise BoothError("bad_config", f"Farbe {names} hat noch offene Anhänger – erst drucken oder stornieren")
+            plate_active = self.db.active_plate() is not None
+            setup = self.setup
+            want = new.print_setup or list_setups()[0]
+            if want != self.setup.name:
+                if self.setup_locked:
+                    raise BoothError("bad_config", "Druck-Setup ist per --setup festgelegt")
+                if self.open_tag_count() or plate_active:
+                    raise BoothError("bad_config", "Druck-Setup nur ändern, wenn keine Anhänger offen sind")
+                try:
+                    setup = load_setup(want)
+                except (KeyError, ValueError) as e:
+                    raise BoothError("bad_config", f"Druck-Setup {want}: {e}") from None
+            printer = self.printer
+            if new.printer != old.printer:
+                if plate_active:
+                    raise BoothError("bad_config", "Drucker erst ändern, wenn keine Platte läuft")
+                printer = make_printer(new.printer)
+            new.data_dir, new.path = old.data_dir, old.path
+            save_config(new)
+            if setup is not self.setup:
+                self.setup = setup
+                for pid in list(self.previews):
+                    shutil.rmtree(self.previews.pop(pid).stl.parent, ignore_errors=True)
+            self.cfg, self.printer = new, printer
+            self.config_rev += 1
+        log.info("settings saved (rev %d)", self.config_rev)
+        return self.staff_settings()
+
+    def staff_test_printer(self, p: dict) -> dict:
+        """Status of a printer config without applying it."""
+        p = self._merge_settings({"printer": p})["printer"]
+        if p.get("type") == "prusalink" and not str(p.get("host", "")).strip():
+            raise BoothError("bad_config", "Host/IP fehlt")
+        if p == self.cfg.printer:
+            st = self.printer.status()
+        else:
+            st = make_printer(p).status()
+        return {"state": st.state, "message": st.message}
 
     def plate_gcode(self, pid: int) -> Path:
         p = self.db.plate(pid)

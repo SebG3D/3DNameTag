@@ -10,7 +10,7 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from nametag import FONT_DIR, REPO
 
-from .config import load_config
+from .config import CONFIG, load_config
 from .service import Booth, BoothError
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -99,7 +99,7 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
     # ---------------- staff
     @app.post("/api/staff/login")
     def login(req: Pin):
-        if not secrets.compare_digest(req.pin, booth.cfg.staff_pin):
+        if not secrets.compare_digest(req.pin.encode(), booth.cfg.staff_pin.encode()):
             raise HTTPException(403, "wrong PIN")
         t = secrets.token_urlsafe(16)
         tokens.add(t)
@@ -141,6 +141,18 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
         booth.staff_sim_resume()
         return {"ok": True}
 
+    @app.get("/api/staff/settings", dependencies=[Depends(staff)])
+    def get_settings():
+        return booth.staff_settings()
+
+    @app.put("/api/staff/settings", dependencies=[Depends(staff)])
+    def put_settings(req: dict = Body(...)):
+        return booth.staff_update_settings(req)
+
+    @app.post("/api/staff/printer/test", dependencies=[Depends(staff)])
+    async def test_printer(req: dict = Body(...)):
+        return await run_in_threadpool(booth.staff_test_printer, req)
+
     @app.get("/api/staff/plates/{pid}/gcode", dependencies=[Depends(staff)])
     def gcode(pid: int):
         p = booth.plate_gcode(pid)
@@ -165,10 +177,12 @@ def main():
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--setup", help="print setup from config/print.json (default: active)")
     ap.add_argument("--data", type=Path, default=os.environ.get("BOOTH_DATA"))
+    ap.add_argument("--config", type=Path, default=os.environ.get("BOOTH_CONFIG") or CONFIG,
+                    help="booth.json (default config/booth.json)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     import uvicorn
-    booth = Booth(load_config(data_dir=a.data), setup_name=a.setup)
+    booth = Booth(load_config(a.config, data_dir=a.data), setup_name=a.setup)
     uvicorn.run(create_app(booth), host=a.host, port=a.port)
 
 

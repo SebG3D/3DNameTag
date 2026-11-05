@@ -1,18 +1,63 @@
 {
-  "_comment": "Booth settings, edited by staff in the morning (restart the backend afterwards). Prices in euro cents. Printer: type sim | prusalink.",
+  "_comment": "Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). Prices in euro cents. Printer: type sim | prusalink. print_setup: null = 'active' from print.json.",
   "event_name": "Weihnachtsmarkt 2026",
-  "base_color": {"name": "Blau", "hex": "#1565C0"},
+  "base_color": {
+    "name": "Blau",
+    "hex": "#1565C0"
+  },
   "text_colors": [
-    {"id": "white",  "name": "Weiß",  "hex": "#FAFAFA"},
-    {"id": "yellow", "name": "Gelb",  "hex": "#FDD835"},
-    {"id": "red",    "name": "Rot",   "hex": "#E53935"},
-    {"id": "green",  "name": "Grün",  "hex": "#43A047"},
-    {"id": "gold",   "name": "Gold",  "hex": "#C9A227"}
+    {
+      "id": "white",
+      "name": "Weiß",
+      "hex": "#FAFAFA"
+    },
+    {
+      "id": "yellow",
+      "name": "Gelb",
+      "hex": "#FDD835"
+    },
+    {
+      "id": "red",
+      "name": "Rot",
+      "hex": "#E53935"
+    },
+    {
+      "id": "green",
+      "name": "Grün",
+      "hex": "#43A047"
+    },
+    {
+      "id": "gold",
+      "name": "Gold",
+      "hex": "#C9A227"
+    }
   ],
-  "pricing": {"free_tags": 1, "price_per_extra_cents": 200},
+  "pricing": {
+    "free_tags": 1,
+    "price_per_extra_cents": 200
+  },
   "max_tags_per_order": 4,
   "queue_limit": 30,
-  "plate": {"max_tags": 8, "max_wait_min": 20, "change_min": 4},
+  "plate": {
+    "max_tags": 8,
+    "max_wait_min": 20.0,
+    "change_min": 4.0
+  },
+  "kiosk": {
+    "idle_s": 90,
+    "sound": true
+  },
+  "disabled_fonts": [],
+  "disabled_shapes": [],
+  "print_setup": null,
   "staff_pin": "2468",
-  "printer": {"type": "sim", "sim_speed": 60, "host": "192.168.10.2", "api_key": "", "user": "maker", "password": "", "storage": "usb"}
+  "printer": {
+    "type": "sim",
+    "sim_speed": 60,
+    "host": "192.168.10.2",
+    "api_key": "",
+    "user": "maker",
+    "password": "",
+    "storage": "usb"
+  }
 }

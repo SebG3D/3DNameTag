@@ -169,3 +169,73 @@ def test_api(tmp_path):
         assert ov["orders"][0]["tags"][0]["name"] == "EMMA"
         assert c.post("/api/staff/start_now/red", headers=h).json()["ok"]
         assert c.get("/staff/").status_code == 200
+
+
+@pytest.fixture
+def cfg_env(tmp_path):
+    import shutil
+    from booth.config import CONFIG
+    path = tmp_path / "booth.json"
+    shutil.copy(CONFIG, path)
+    clock = Clock()
+    booth = Booth(load_config(path, data_dir=tmp_path), printer=SimPrinter(speed=1.0, clock=clock), clock=clock)
+    return booth, path
+
+
+def test_settings_roundtrip_and_live_apply(cfg_env):
+    import json
+    booth, path = cfg_env
+    s = booth.staff_settings()
+    assert s["settings"]["staff_pin"] == "" and "api_key" not in s["settings"]["printer"]
+    d = s["settings"]
+    d["event_name"] = "Adventsbasar"
+    d["pricing"]["price_per_extra_cents"] = 150
+    d["text_colors"].append({"id": "pink", "name": "Pink", "hex": "#ec407a"})
+    d["disabled_shapes"] = ["bell"]
+    d["kiosk"] = {"idle_s": 60, "sound": False}
+    rev = booth.config_rev
+    booth.staff_update_settings(d)
+    assert booth.config_rev == rev + 1
+    pub = booth.public_config()
+    assert pub["event_name"] == "Adventsbasar" and pub["pricing"]["price_per_extra_cents"] == 150
+    assert "bell" not in [x["id"] for x in pub["shapes"]] and pub["kiosk"] == {"idle_s": 60, "sound": False}
+    saved = json.loads(path.read_text())
+    assert saved["text_colors"][-1]["hex"] == "#EC407A" and saved["staff_pin"] == "2468"   # empty PIN = unchanged
+
+
+def test_settings_guards(cfg_env):
+    booth, _ = cfg_env
+    p = booth.preview("EMMA", "baloo", "star")
+    booth.place_order([{"preview_id": p.id, "text_color": "red"}])
+    d = booth.staff_settings()["settings"]
+    d["text_colors"] = [c for c in d["text_colors"] if c["id"] != "red"]
+    with pytest.raises(BoothError, match="Rot"):
+        booth.staff_update_settings(d)
+    d = booth.staff_settings()["settings"]
+    d["print_setup"] = "nozzle040"
+    with pytest.raises(BoothError, match="Setup"):
+        booth.staff_update_settings(d)
+    for bad in ({"staff_pin": "12"}, {"queue_limit": 0}, {"base_color": {"name": "X", "hex": "blue"}},
+                {"disabled_fonts": [f for f in booth.fonts]}):
+        d = {**booth.staff_settings()["settings"], **bad}
+        with pytest.raises(BoothError):
+            booth.staff_update_settings(d)
+    d = booth.staff_settings()["settings"]
+    d["staff_pin"] = "1357"
+    booth.staff_update_settings(d)
+    assert booth.cfg.staff_pin == "1357"
+
+
+def test_settings_setup_and_printer_switch(cfg_env):
+    booth, _ = cfg_env
+    d = booth.staff_settings()["settings"]
+    d["print_setup"] = "nozzle040"
+    d["printer"] = {**d["printer"], "type": "prusalink", "host": "127.0.0.1:9", "api_key": "secret"}
+    booth.staff_update_settings(d)
+    assert booth.setup.name == "nozzle040" and booth.printer.kind != "sim"
+    assert booth.cfg.printer["api_key"] == "secret"
+    d = booth.staff_settings()["settings"]
+    assert d["printer"]["has_api_key"] is True
+    booth.staff_update_settings(d)                                  # empty api_key = keep
+    assert booth.cfg.printer["api_key"] == "secret"
+    assert booth.staff_test_printer(d["printer"])["state"] == "offline"

@@ -19,10 +19,21 @@
     <span id="printerChip" class="chip">Drucker …</span>
     <span id="etaAll" class="muted"></span>
     <button id="pauseBtn" class="small">Pause</button>
+    <button id="settingsBtn" class="small">⚙ Einstellungen</button>
     <a href="/kiosk/" class="small kiosk-link">Kiosk</a>
   </header>
   <p id="pauseReason" class="err hidden"></p>
 
+  <div id="settingsView" class="hidden">
+    <div id="settingsForm"></div>
+    <div class="savebar">
+      <span id="settingsMsg" class="muted"></span>
+      <button id="settingsCancel">Zurück</button>
+      <button id="settingsSave" class="primary">Speichern</button>
+    </div>
+  </div>
+
+  <div id="overview">
   <section id="plateCard" class="card"></section>
 
   <section class="card">
@@ -39,7 +50,9 @@
     <h2>Letzte Platten</h2>
     <div id="plates"></div>
   </section>
+  </div>
 </main>
 <script src="staff.js"></script>
+<script src="settings.js"></script>
 </body>
 </html>

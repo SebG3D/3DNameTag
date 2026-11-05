@@ -58,3 +58,9 @@ def load_setup(name: str | None = None, config: Path = CONFIG) -> PrintSetup:
         raise ValueError(f"{name}: text_overlap must not exceed one base layer ({layer})")
     return PrintSetup(name, profile, e["scale"], e["min_text_size"], e["base_h"], e["text_h"],
                       e["text_overlap"], e["hole_d"], e["text_grow"], layer, first, text_layer)
+
+
+def list_setups(config: Path = CONFIG) -> tuple[str, dict]:
+    """(active name, {name: raw setup dict}) from print.json."""
+    cfg = json.loads(config.read_text())
+    return cfg["active"], cfg["setups"]

@@ -2,6 +2,7 @@ import { Component, useEffect, useReducer, useRef, useState, type CSSProperties,
 import { api, ApiError, type Config, type Status } from "./api";
 import { ConfigContext, loadFonts } from "./config";
 import { preloadIcons } from "./icons";
+import { setSound } from "./sound";
 import { canGoNext, initialState, previewKey, reducer, STEPS } from "./state";
 import { Dots, IdleGuard, Nav, StaffCorner, STEP_COLORS } from "./components/Chrome";
 import { Attract } from "./screens/Attract";
@@ -46,10 +47,15 @@ function useStatus(enabled: boolean) {
   return { status, offline };
 }
 
-function Kiosk() {
+function Kiosk({ cfg }: { cfg: Config }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { status, offline } = useStatus(true);
   const s = state.screen;
+
+  // staff changed the settings: reload, but only between customers
+  useEffect(() => {
+    if (s === "attract" && status && status.config_rev !== cfg.rev) window.location.reload();
+  }, [s, status, cfg.rev]);
   const step = STEPS.indexOf(s);
   const accent = step >= 0 ? STEP_COLORS[step] : "#1E88E5";
 
@@ -87,7 +93,7 @@ function Kiosk() {
           nextDisabled={!canGoNext(state) || (s === "color" && !state.draft.preview)}
         />
       )}
-      <IdleGuard active={s !== "attract" && s !== "done"} onTimeout={() => dispatch({ type: "RESET" })} />
+      <IdleGuard active={s !== "attract" && s !== "done"} idleMs={cfg.kiosk.idle_s * 1000} onTimeout={() => dispatch({ type: "RESET" })} />
       {offline && <div className="overlay solid"><OfflineScreen /></div>}
     </div>
   );
@@ -114,6 +120,7 @@ export default function App() {
       try {
         const c = await api.config();
         await loadFonts(c);
+        setSound(c.kiosk.sound);
         if (!live) return;
         setCfg(c);
         void preloadIcons(c.shapes.map((s) => s.id));
@@ -130,7 +137,7 @@ export default function App() {
       <div className="stage-scale" style={{ width: STAGE_W, height: STAGE_H, transform: `scale(${scale})` }}>
         <ErrorBoundary>
           {cfg ? (
-            <ConfigContext.Provider value={cfg}><Kiosk /></ConfigContext.Provider>
+            <ConfigContext.Provider value={cfg}><Kiosk cfg={cfg} /></ConfigContext.Provider>
           ) : (
             <div className="stage"><OfflineScreen /></div>
           )}

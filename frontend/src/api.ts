@@ -15,6 +15,8 @@ export type Config = {
   max_tags_per_order: number;
   name_max: number;
   queue_limit: number;
+  kiosk: { idle_s: number; sound: boolean };
+  rev: number;
 };
 
 export type Status = {
@@ -23,6 +25,7 @@ export type Status = {
   queue_length: number;
   queue_full: boolean;
   paused: boolean;
+  config_rev: number;
 };
 
 export type Paths = { outline: string; text: string };

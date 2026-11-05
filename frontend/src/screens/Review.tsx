@@ -77,15 +77,16 @@ export function ReviewScreen({ state, dispatch }: P) {
         )}
       </div>
       <div className="price-line">
-        {price === 0 ? (free_tags === 1 && n === 1 ? "Dein Anhänger ist gratis! 🎁" : "Gratis! 🎁")
-          : `${Math.min(n, free_tags)} gratis + ${n - free_tags} × ${euro(each)} = ${euro(price)} – bitte am Stand bezahlen`}
+        {price === 0 ? "Gratis! 🎁"
+          : free_tags > 0 ? `${Math.min(n, free_tags)} gratis + ${n - free_tags} × ${euro(each)} = ${euro(price)} – bitte am Stand bezahlen`
+          : `${n} × ${euro(each)} = ${euro(price)} – bitte am Stand bezahlen`}
       </div>
       {error && <div className="error-line">{error}</div>}
       <Nav
         onBack={busy ? undefined : () => dispatch({ type: "GOTO", screen: "color" })}
         middle={canAdd && !busy ? (
           <button className="btn btn-more" disabled={!d.preview} onClick={() => dispatch({ type: "ADD_ANOTHER" })}>
-            + Noch einen Anhänger{each > 0 && n >= free_tags ? ` (${euro(each)})` : ""}
+            + Noch einen Anhänger{each > 0 && n + 1 > free_tags ? ` (${euro(each)})` : ""}
           </button>
         ) : undefined}
         onNext={submit}
@@ -97,6 +98,7 @@ export function ReviewScreen({ state, dispatch }: P) {
 }
 
 export function DoneScreen({ state, dispatch }: P) {
+  const cfg = useConfig();
   const o = state.order;
   useEffect(() => {
     const id = setTimeout(() => dispatch({ type: "RESET" }), o?.needs_payment ? 40000 : 25000);
@@ -117,7 +119,7 @@ export function DoneScreen({ state, dispatch }: P) {
       <div className="done-num">{o.number}</div>
       <p className="done-text">Fertig ungefähr um <b>{o.eta} Uhr</b>.</p>
       {o.needs_payment ? (
-        <p className="pay-note">Bitte jetzt am Stand <b>{euro(o.price_cents)}</b> bezahlen und deine Nummer sagen.<br />Dein erster Anhänger ist schon in der Warteschlange!</p>
+        <p className="pay-note">Bitte jetzt am Stand <b>{euro(o.price_cents)}</b> bezahlen und deine Nummer sagen.{cfg.pricing.free_tags > 0 && <><br />Dein erster Anhänger ist schon in der Warteschlange!</>}</p>
       ) : (
         <p className="muted big">Merk dir deine Nummer und sag sie am Stand!</p>
       )}

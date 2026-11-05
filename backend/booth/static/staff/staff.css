@@ -40,3 +40,23 @@ svg.map { width: 100%; background: #2a2a33; border-radius: 10px; }
 svg.map text { font: 700 7px system-ui, sans-serif; fill: #fff; }
 svg.map text.num { font-size: 11px; }
 a.kiosk-link { font-weight: 600; text-decoration: none; color: #33333f; background: #e4e4ec; border-radius: 10px; padding: 6px 10px; font-size: 14px; }
+
+/* settings */
+.field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.field > span { font-size: 14px; color: #555; font-weight: 600; }
+.field small { color: #777; }
+.field input, .field select { font-size: 18px; padding: 8px 10px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.colorrow { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.colorrow input[type=text] { flex: 1; min-width: 0; font-size: 18px; padding: 8px; }
+input[type=color] { width: 52px; height: 44px; padding: 2px; border-radius: 10px; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 17px; margin: 6px 0; }
+.check input { width: 24px !important; }
+.check input { width: 24px; height: 24px; }
+.savebar { position: sticky; bottom: 0; background: #eef0f5; display: flex; gap: 8px; align-items: center; padding: 10px 2px; }
+.savebar #settingsMsg { flex: 1; }
+.lock { font-size: 14px; color: #8a5a00; background: #fff4cc; border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
+.field { min-width: 0; }
+.field input, .field select { width: 100%; min-width: 0; }
+.colorrow input[type=color] { width: 52px; flex: none; }
+header { flex-wrap: wrap; }
