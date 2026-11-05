@@ -110,7 +110,7 @@ function renderPlate() {
       ${active.status !== "printed" && active.map.length ? `<details><summary class="muted">Plattenplan</summary>${plateMap(active)}</details>` : ""}
       ${active.gcode ? `<a class="muted" href="/api/staff/plates/${active.id}/gcode?token=${encodeURIComponent(token)}">G-Code (USB)</a>` : ""}
       <button class="danger small" onclick="act('/api/staff/plates/${active.id}/cancel',
-        'Platte abbrechen? Die Namen kommen zurück in die Warteschlange. Den Druck am Drucker selbst stoppen!')">Abbrechen</button>
+        'Platte abbrechen? Die Namen kommen zurück in die Warteschlange.${data.printer.kind === "prusalink" ? " Der Druck wird am Drucker gestoppt." : " Den Druck am Drucker selbst stoppen!"}')">Abbrechen</button>
     </div>`;
 }
 

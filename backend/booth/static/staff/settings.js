@@ -83,16 +83,15 @@ function renderSettings() {
     <div id="plFields" class="${p.type === "prusalink" ? "" : "hidden"}">
       <div class="grid2">
         ${field("Host / IP", txt("printer.host", p.host, 'placeholder="192.168.10.2"'))}
-        ${field("Speicher", `<select data-k="printer.storage"><option value="usb" ${p.storage !== "local" ? "selected" : ""}>USB-Stick</option>
-          <option value="local" ${p.storage === "local" ? "selected" : ""}>intern</option></select>`)}
-        ${field("API-Key", `<input type="password" data-k="printer.api_key" autocomplete="off" placeholder="${p.has_api_key ? "gespeichert – leer lassen" : "aus dem Drucker-Menü"}">`)}
-        ${field("Benutzer (statt API-Key)", txt("printer.user", p.user))}
-        ${field("Passwort", `<input type="password" data-k="printer.password" autocomplete="off" placeholder="${p.has_password ? "gespeichert – leer lassen" : ""}">`)}
+        ${field("Benutzer", txt("printer.user", p.user), "Drucker: Einstellungen › Netzwerk › PrusaLink")}
+        ${field("Passwort", `<input type="password" data-k="printer.password" autocomplete="off" placeholder="${p.has_password ? "gespeichert – leer lassen" : "aus dem Drucker-Menü"}">`)}
+        ${field("API-Key (nur ältere Firmware)", `<input type="password" data-k="printer.api_key" autocomplete="off" placeholder="${p.has_api_key ? "gespeichert – leer lassen" : "leer lassen"}">`, "wenn gesetzt, wird er statt Passwort benutzt")}
       </div>
     </div>
     <div id="simFields" class="${p.type === "sim" ? "" : "hidden"}">
       ${field("Sim-Geschwindigkeit (x Echtzeit)", num("printer.sim_speed", p.sim_speed ?? 60, 'min="1" max="1000"'))}
     </div>
+    <p class="muted">Die Platten werden auf den USB-Stick im Drucker geladen – Stick muss stecken.</p>
     <div class="row"><button class="small" id="testPrinter">Verbindung testen</button><span id="testMsg" class="muted"></span></div>
   </section>
 

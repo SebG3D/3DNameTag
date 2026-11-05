@@ -95,6 +95,8 @@ class Booth:
         self.db = DB(self.data / "booth.sqlite")
         self.printer = printer or make_printer(cfg.printer)
         self.previews: dict[str, Preview] = {}
+        # plate id -> last seen printer progress (persisted: survives a restart)
+        self._progress: dict[int, float] = {int(k): v for k, v in self.db.get_state("plate_progress", {}).items()}
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="render")
         self.lock = threading.RLock()            # scheduler vs. staff actions
         self.last_status = PrinterStatus("offline", message="not polled yet")
@@ -295,6 +297,11 @@ class Booth:
         pid, status = plate["id"], plate["status"]
         if status not in ("printing", "color_change"):
             return                                   # printed: waits for staff
+        if st.state in ("printing", "attention", "paused", "finished"):
+            prog = 100.0 if st.state == "finished" else st.progress
+            if int(prog) != int(self._progress.get(pid, -1)):
+                self._progress = {pid: prog}                 # only the active plate matters
+                self.db.set_state("plate_progress", self._progress)
         if st.state in ("attention", "paused"):
             if status != "color_change":
                 self.db.plate_status(pid, "color_change")
@@ -310,8 +317,15 @@ class Booth:
                     self.real_factor = round(0.7 * self.real_factor + 0.3 * f, 3)
                     self.db.set_state("real_factor", self.real_factor)
         elif st.state == "idle" and self.clock() - (plate["started"] or 0) > START_GRACE_S:
-            self.db.plate_status(pid, "failed", error="printer idle - print aborted on the printer?")
-            self._pause("plate failed")
+            if self._progress.get(pid, 0) >= 99:
+                # FINISHED was missed (backend down, or the end was confirmed on the
+                # printer before we polled) - the plate is done, do not reprint it
+                self.db.plate_status(pid, "printed", finished=self.clock())
+                log.info("plate %d: printer idle after %.0f %% - counted as printed", pid, self._progress[pid])
+            else:
+                self.db.plate_status(pid, "failed", error="Drucker meldet bereit, Druck nicht fertig - "
+                                     "am Drucker abgebrochen?")
+                self._pause("plate failed")
         elif st.state == "error":
             self.db.plate_status(pid, "failed", error=f"printer error: {st.message}")
             self._pause("printer error")
@@ -535,10 +549,8 @@ class Booth:
         p = self._merge_settings({"printer": p})["printer"]
         if p.get("type") == "prusalink" and not str(p.get("host", "")).strip():
             raise BoothError("bad_config", "Host/IP fehlt")
-        if p == self.cfg.printer:
-            st = self.printer.status()
-        else:
-            st = make_printer(p).status()
+        pr = self.printer if p == self.cfg.printer else make_printer(p)
+        st = pr.check() if hasattr(pr, "check") else pr.status()
         return {"state": st.state, "message": st.message}
 
     def plate_gcode(self, pid: int) -> Path:

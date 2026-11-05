@@ -103,11 +103,17 @@ _PL_STATES = {"IDLE": "idle", "READY": "idle", "PRINTING": "printing", "PAUSED":
               "ERROR": "error"}
 
 
+class PrinterNotReady(RuntimeError):
+    """Upload/start refused; the message is meant for the staff page."""
+
+
 class PrusaLinkPrinter(Printer):
-    """PrusaLink API v1 (xBuddy firmware: MK4/Core One). Auth with X-Api-Key or
-    HTTP digest (user 'maker' + password from the printer's network menu).
-    Upload target is the printer's USB stick (storage 'usb'), so a stick must
-    be plugged into the printer."""
+    """PrusaLink API v1 (xBuddy firmware: MK4/Core One), checked against the
+    official spec (Prusa-Link-Web spec/openapi.yaml) and booth/fakelink.py.
+    Auth: HTTP digest with user 'maker' + password from the printer's
+    network menu (spec default), or an X-Api-Key on older firmware.
+    Upload target is the printer's USB stick (storage 'usb') - the Core One
+    has no internal storage, so a stick must be plugged in."""
     kind = "prusalink"
 
     def __init__(self, host: str, api_key: str = "", user: str = "maker", password: str = "",
@@ -115,13 +121,23 @@ class PrusaLinkPrinter(Printer):
         headers = {"X-Api-Key": api_key} if api_key else {}
         auth = httpx.DigestAuth(user, password) if password and not api_key else None
         self.storage = storage
+        self.host = host
         self.http = httpx.Client(base_url=f"http://{host}", headers=headers, auth=auth, timeout=timeout)
+
+    def _get(self, path: str) -> dict:
+        r = self.http.get(path)
+        if r.status_code == 401:
+            raise PrinterNotReady("Zugangsdaten falsch (Benutzer/Passwort oder API-Key)")
+        r.raise_for_status()
+        return r.json() if r.content else {}
 
     def status(self) -> PrinterStatus:
         try:
-            r = self.http.get("/api/v1/status")
-            r.raise_for_status()
-            d = r.json()
+            d = self._get("/api/v1/status")
+        except PrinterNotReady as e:
+            return PrinterStatus("offline", message=str(e))
+        except httpx.TransportError as e:
+            return PrinterStatus("offline", message=f"nicht erreichbar ({type(e).__name__})")
         except (httpx.HTTPError, ValueError) as e:
             return PrinterStatus("offline", message=str(e)[:200])
         p, job = d.get("printer", {}), d.get("job") or {}
@@ -129,14 +145,50 @@ class PrusaLinkPrinter(Printer):
         return PrinterStatus(state, float(job.get("progress") or 0), job.get("time_remaining"),
                              str(p.get("state", "")))
 
+    def check(self) -> PrinterStatus:
+        """Status plus 'is the USB stick there' (connection test on the staff page)."""
+        st = self.status()
+        if st.state == "offline":
+            return st
+        try:
+            lst = self._get("/api/v1/storage").get("storage_list", [])
+        except (httpx.HTTPError, ValueError, PrinterNotReady):
+            return st                                  # older firmware: no storage endpoint
+        ok = [x for x in lst if x.get("available") and not x.get("read_only")
+              and str(x.get("path", "")).strip("/") == self.storage]
+        if not ok:
+            st.message = f"Speicher '{self.storage}' fehlt - USB-Stick in den Drucker stecken!"
+        else:
+            st.message = f"{st.message}, USB ok".strip(", ")
+        return st
+
     def start(self, gcode: Path, est_s: int) -> None:
         name = gcode.name
-        with open(gcode, "rb") as f:
-            r = self.http.put(f"/api/v1/files/{self.storage}/{name}", content=f.read(), timeout=120,
+        try:
+            r = self.http.put(f"/api/v1/files/{self.storage}/{name}", content=gcode.read_bytes(), timeout=180,
                               headers={"Content-Type": "application/octet-stream",
                                        "Print-After-Upload": "?1", "Overwrite": "?1"})
-        if r.status_code not in (200, 201, 204):
-            raise RuntimeError(f"PrusaLink upload failed: HTTP {r.status_code} {r.text[:200]}")
+        except httpx.HTTPError as e:
+            raise PrinterNotReady(f"Upload zum Drucker fehlgeschlagen ({type(e).__name__})") from None
+        if r.status_code in (200, 201, 204):
+            return
+        if r.status_code == 409:
+            raise PrinterNotReady("Drucker nicht bereit (409): am Drucker das Druckende bestätigen / "
+                                  "laufenden Druck beenden, dann Weiter")
+        if r.status_code == 404:
+            raise PrinterNotReady(f"Speicher '{self.storage}' nicht gefunden (404): USB-Stick im Drucker?")
+        if r.status_code == 401:
+            raise PrinterNotReady("Zugangsdaten falsch (401)")
+        raise PrinterNotReady(f"Upload fehlgeschlagen: HTTP {r.status_code} {r.text[:200]}")
+
+    def abort(self) -> None:
+        """Stop the running job on the printer (best effort)."""
+        try:
+            job = (self._get("/api/v1/status").get("job") or {}).get("id")
+            if job is not None:
+                self.http.delete(f"/api/v1/job/{job}")
+        except (httpx.HTTPError, ValueError, PrinterNotReady):
+            pass
 
 
 def make_printer(cfg: dict) -> Printer:
