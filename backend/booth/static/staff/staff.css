@@ -60,3 +60,11 @@ input[type=color] { width: 52px; height: 44px; padding: 2px; border-radius: 10px
 .field input, .field select { width: 100%; min-width: 0; }
 .colorrow input[type=color] { width: 52px; flex: none; }
 header { flex-wrap: wrap; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; margin: 6px 0 10px; }
+.kpis div { background: #f4f6fb; border-radius: 10px; padding: 8px 4px; display: flex; flex-direction: column; }
+.kpis b { font-size: 22px; }
+.kpis span { font-size: 13px; color: #666; }
+a.btnlink { font-weight: 600; text-decoration: none; color: #33333f; background: #e4e4ec; border-radius: 10px; padding: 8px 12px; font-size: 15px; }
+table.days { width: 100%; border-collapse: collapse; font-size: 15px; }
+table.days td, table.days th { text-align: left; padding: 4px; border-top: 1px solid #eee; }

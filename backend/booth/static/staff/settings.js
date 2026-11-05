@@ -187,6 +187,7 @@ async function testPrinter() {
 }
 
 function showSettings(on) {
+  if (on) showStats(false);
   $("settingsView").classList.toggle("hidden", !on);
   $("overview").classList.toggle("hidden", on);
   $("settingsBtn").classList.toggle("primary", on);

@@ -6,13 +6,14 @@ Run:  backend/.venv/bin/python -m booth.server  (from backend/)
 import argparse
 import logging
 import os
+import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -152,6 +153,26 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
     @app.post("/api/staff/printer/test", dependencies=[Depends(staff)])
     async def test_printer(req: dict = Body(...)):
         return await run_in_threadpool(booth.staff_test_printer, req)
+
+    @app.get("/api/staff/stats", dependencies=[Depends(staff)])
+    def stats():
+        return booth.staff_stats()
+
+    @app.post("/api/staff/close_day", dependencies=[Depends(staff)])
+    def close_day():
+        return booth.staff_close_day()
+
+    @app.post("/api/staff/backup", dependencies=[Depends(staff)])
+    def backup_now():
+        return {"file": str(booth.backup(tag="manual"))}
+
+    @app.get("/api/staff/export.csv", dependencies=[Depends(staff)])
+    def export(day: str = Query(default="")):
+        if day and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            raise HTTPException(400, "day: YYYY-MM-DD")
+        name = f"namensanhaenger-{day or 'alle'}.csv"
+        return Response("\ufeff" + booth.export_csv(day or None), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     @app.get("/api/staff/plates/{pid}/gcode", dependencies=[Depends(staff)])
     def gcode(pid: int):

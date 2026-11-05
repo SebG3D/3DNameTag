@@ -35,6 +35,8 @@ from .printer import Printer, PrinterStatus, SimPrinter, make_printer
 log = logging.getLogger("booth")
 
 PREVIEW_TTL_S = 600
+BACKUP_EVERY_S = 3600
+BACKUP_KEEP = 48
 ICON_NAME, ICON_FONT = "EMMA", "baloo"
 START_GRACE_S = 90          # printer may report idle this long after upload
 # Time model, refined after every sliced plate (est = overhead + area * k).
@@ -325,10 +327,10 @@ class Booth:
             else:
                 self.db.plate_status(pid, "failed", error="Drucker meldet bereit, Druck nicht fertig - "
                                      "am Drucker abgebrochen?")
-                self._pause("plate failed")
+                self._pause("Platte fehlgeschlagen")
         elif st.state == "error":
             self.db.plate_status(pid, "failed", error=f"printer error: {st.message}")
-            self._pause("printer error")
+            self._pause("Druckerfehler")
 
     def _pause(self, reason: str) -> None:
         self.db.set_state("paused", True)
@@ -352,7 +354,7 @@ class Booth:
         except Exception as e:                      # noqa: BLE001 - shown on the staff page
             log.exception("plate %d failed", pid)
             self.db.plate_status(pid, "failed", error=str(e)[:500])
-            self._pause("plate failed")
+            self._pause("Platte fehlgeschlagen")
 
     def _learn_time(self, est_s: int, tags: list[dict]) -> None:
         area = sum(t["area_mm2"] for t in tags)
@@ -365,6 +367,7 @@ class Booth:
         while not self._stop.is_set():
             try:
                 self.tick()
+                self._maybe_backup()
             except Exception:                       # noqa: BLE001 - keep the loop alive
                 log.exception("tick failed")
             self._stop.wait(interval)
@@ -400,7 +403,7 @@ class Booth:
                 "orders": orders, "plates": plates, "waiting_by_color": waiting,
                 "held": self.db.q1("SELECT COUNT(*) AS n FROM tags WHERE status='held'")["n"],
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
-                "setup": self.setup.name, "eta_all_s": int(self.eta_s())}
+                "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day()}
 
     def staff_paid(self, oid: int) -> None:
         self.db.mark_paid(oid, self.clock())
@@ -552,6 +555,157 @@ class Booth:
         pr = self.printer if p == self.cfg.printer else make_printer(p)
         st = pr.check() if hasattr(pr, "check") else pr.status()
         return {"state": st.state, "message": st.message}
+
+    # ------------------------------------------------------------ day / stats
+    def _day(self, t: float | None = None) -> str:
+        return time.strftime("%Y-%m-%d", time.localtime(self.clock() if t is None else t))
+
+    def stats(self, day: str | None = None) -> dict:
+        """Numbers for one day (default today): orders, tags, money, colours, waiting time."""
+        day = day or self._day()
+        q, q1 = self.db.q, self.db.q1
+        orders = q1("SELECT COUNT(*) AS n, COALESCE(SUM(CASE WHEN paid=1 AND status!='cancelled' "
+                    "THEN price_cents END), 0) AS paid_cents, "
+                    "COALESCE(SUM(CASE WHEN paid=0 AND status='open' THEN price_cents END), 0) AS due_cents "
+                    "FROM orders WHERE day=? AND status!='cancelled'", day)
+        tags = {r["status"]: r["n"] for r in q(
+            "SELECT t.status, COUNT(*) AS n FROM tags t JOIN orders o ON o.id=t.order_id WHERE o.day=? "
+            "GROUP BY t.status", day)}
+        by_color = {r["text_color"]: r["n"] for r in q(
+            "SELECT t.text_color, COUNT(*) AS n FROM tags t JOIN orders o ON o.id=t.order_id "
+            "WHERE o.day=? AND t.status='printed' GROUP BY t.text_color", day)}
+        by_shape = {r["shape"]: r["n"] for r in q(
+            "SELECT t.shape, COUNT(*) AS n FROM tags t JOIN orders o ON o.id=t.order_id "
+            "WHERE o.day=? AND t.status!='cancelled' GROUP BY t.shape", day)}
+        by_font = {r["font"]: r["n"] for r in q(
+            "SELECT t.font, COUNT(*) AS n FROM tags t JOIN orders o ON o.id=t.order_id "
+            "WHERE o.day=? AND t.status!='cancelled' GROUP BY t.font", day)}
+        wait = q1("SELECT AVG(p.finished - t.queued_at) AS avg_s, MAX(p.finished - t.queued_at) AS max_s "
+                  "FROM tags t JOIN orders o ON o.id=t.order_id JOIN plates p ON p.id=t.plate_id "
+                  "WHERE o.day=? AND t.status='printed' AND p.finished IS NOT NULL", day)
+        lo, hi = time.mktime(time.strptime(day, "%Y-%m-%d")), time.mktime(time.strptime(day, "%Y-%m-%d")) + 86400
+        plates = {r["status"]: r["n"] for r in q(
+            "SELECT status, COUNT(*) AS n FROM plates WHERE created>=? AND created<? GROUP BY status", lo, hi)}
+        print_s = q1("SELECT COALESCE(SUM(finished - started), 0) AS s FROM plates "
+                     "WHERE status IN ('printed','done') AND created>=? AND created<?", lo, hi)["s"]
+        return {"day": day, "orders": orders["n"], "paid_cents": orders["paid_cents"],
+                "due_cents": orders["due_cents"],
+                "tags_printed": tags.get("printed", 0),
+                "tags_open": sum(tags.get(k, 0) for k in ("held", "queued", "plated")),
+                "tags_cancelled": tags.get("cancelled", 0),
+                "free_tags": q1("SELECT COUNT(*) AS n FROM tags t JOIN orders o ON o.id=t.order_id "
+                                "WHERE o.day=? AND t.free=1 AND t.status!='cancelled'", day)["n"],
+                "plates_done": plates.get("done", 0) + plates.get("printed", 0),
+                "plates_failed": plates.get("failed", 0) + plates.get("cancelled", 0),
+                "print_h": round(print_s / 3600, 1),
+                "by_color": by_color, "by_shape": by_shape, "by_font": by_font,
+                "wait_avg_min": round((wait["avg_s"] or 0) / 60), "wait_max_min": round((wait["max_s"] or 0) / 60)}
+
+    def staff_stats(self) -> dict:
+        days = [r["day"] for r in self.db.q("SELECT DISTINCT day FROM orders ORDER BY day DESC LIMIT 7")]
+        today = self._day()
+        return {"today": self.stats(today),
+                "days": [self.stats(d) for d in days if d != today],
+                "close_preview": self.close_day_preview(),
+                "last_backup": self.db.get_state("last_backup"),
+                "colors": self.cfg.text_colors}
+
+    def close_day_preview(self) -> dict:
+        """What 'Tag abschließen' would do."""
+        q1 = self.db.q1
+        return {
+            "plate_active": self.db.active_plate() is not None,
+            "orders_open": q1("SELECT COUNT(*) AS n FROM orders WHERE status='open'")["n"],
+            "tags_unprinted": q1("SELECT COUNT(*) AS n FROM tags WHERE status IN ('held','queued')")["n"],
+            "orders_unpaid": q1("SELECT COUNT(*) AS n FROM orders WHERE status='open' AND paid=0")["n"],
+            "orders_waiting_pickup": q1(
+                "SELECT COUNT(*) AS n FROM orders o WHERE status='open' AND NOT EXISTS (SELECT 1 FROM tags t "
+                "WHERE t.order_id=o.id AND t.status IN ('held','queued','plated'))")["n"],
+        }
+
+    def staff_close_day(self) -> dict:
+        """End of the booth day: unprinted tags are cancelled, all open orders
+        closed (printed but not picked up -> done; they stay in the leftover box),
+        files of finished work removed, a backup made. Pickup numbers restart
+        with the next calendar day anyway."""
+        with self.lock:
+            if self.db.active_plate():
+                raise BoothError("bad_state", "Erst die laufende Platte fertig drucken und abnehmen")
+            now = self.clock()
+            with self.db.tx() as c:
+                c.execute("UPDATE tags SET status='cancelled' WHERE status IN ('held','queued')")
+                c.execute("UPDATE orders SET status='cancelled' WHERE status='open' AND NOT EXISTS ("
+                          "SELECT 1 FROM tags t WHERE t.order_id=orders.id AND t.status!='cancelled')")
+                c.execute("UPDATE orders SET status='done', done_at=? WHERE status='open'", (now,))
+            self.db.set_state("force_color", None)
+            removed = self.cleanup_files()
+            path = self.backup(tag="close")
+            self.db.set_state("day_closed", self._day())
+        log.info("day closed: %d files removed, backup %s", removed, path)
+        return {"removed_files": removed, "backup": str(path)}
+
+    def cleanup_files(self) -> int:
+        """Delete STL/3MF/G-code of finished or cancelled work."""
+        n = 0
+        for t in self.db.q("SELECT stl FROM tags WHERE status IN ('printed','cancelled')"):
+            p = Path(t["stl"])
+            if p.exists():
+                p.unlink()
+                n += 1
+        for pl in self.db.q("SELECT id, gcode FROM plates WHERE status IN ('done','failed','cancelled')"):
+            for f in (self.data / "plates").glob(f"plate_{pl['id']:03d}.*"):
+                f.unlink()
+                n += 1
+        self._expire_previews()
+        return n
+
+    def backup(self, tag: str = "auto") -> Path:
+        """Consistent SQLite copy to data/backups (+ $BOOTH_BACKUP_DIR, e.g. a USB stick)."""
+        import os
+        import sqlite3
+        name = f"booth-{time.strftime('%Y%m%d-%H%M%S', time.localtime(self.clock()))}-{tag}.sqlite"
+        dirs = [self.data / "backups"]
+        if os.environ.get("BOOTH_BACKUP_DIR"):
+            dirs.append(Path(os.environ["BOOTH_BACKUP_DIR"]))
+        first = None
+        for d in dirs:
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+                dst = sqlite3.connect(d / name)
+                with self.db.lock:
+                    self.db.con.backup(dst)
+                dst.close()
+                for old in sorted(d.glob("booth-*.sqlite"))[:-BACKUP_KEEP]:
+                    old.unlink()
+                first = first or d / name
+            except OSError as e:
+                log.warning("backup to %s failed: %s", d, e)
+        self.db.set_state("last_backup", {"t": self.clock(), "file": name})
+        return first
+
+    def _maybe_backup(self) -> None:
+        last = (self.db.get_state("last_backup") or {}).get("t", 0)
+        if self.clock() - last >= BACKUP_EVERY_S:
+            self.backup()
+
+    def export_csv(self, day: str | None = None) -> str:
+        import csv
+        import io
+        rows = self.db.q(
+            "SELECT o.day, o.number, o.status AS order_status, o.paid, o.price_cents, t.idx, t.name, t.font, "
+            "t.shape, t.text_color, t.free, t.status AS tag_status, t.plate_id, "
+            "datetime(o.created, 'unixepoch', 'localtime') AS created "
+            "FROM tags t JOIN orders o ON o.id=t.order_id " + ("WHERE o.day=? " if day else "") +
+            "ORDER BY o.id, t.idx", *([day] if day else []))
+        out = io.StringIO()
+        w = csv.writer(out, delimiter=";")
+        w.writerow(["Tag", "Nummer", "Bestellung", "bezahlt", "Preis (EUR)", "Pos", "Name", "Schrift", "Form",
+                    "Farbe", "gratis", "Status", "Platte", "Zeit"])
+        for r in rows:
+            w.writerow([r["day"], r["number"], r["order_status"], r["paid"],
+                        f"{r['price_cents'] / 100:.2f}".replace(".", ","), r["idx"], r["name"], r["font"],
+                        r["shape"], r["text_color"], r["free"], r["tag_status"], r["plate_id"] or "", r["created"]])
+        return out.getvalue()
 
     def plate_gcode(self, pid: int) -> Path:
         p = self.db.plate(pid)

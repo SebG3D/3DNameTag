@@ -132,6 +132,7 @@ function renderOrders() {
       ${["held", "queued"].includes(t.status) ? `<button class="danger small" onclick="act('/api/staff/tags/${t.id}/cancel', 'Anhänger ${esc(t.name)} stornieren?')">✕</button>` : ""}
       </div>`).join("");
     return `<div class="order"><div class="row"><span class="num">#${o.number}</span>
+      ${o.day !== data.today ? `<span class="chip">${esc(o.day.slice(8))}.${esc(o.day.slice(5, 7))}.</span>` : ""}
       ${o.ready ? `<span class="chip ok">abholbereit</span>` : ""}
       ${due ? `<span class="chip att">${euro(o.price_cents)} offen</span>
         <button class="warn small" onclick="act('/api/staff/orders/${o.id}/paid', '${euro(o.price_cents)} kassiert?')">Bezahlt</button>` : ""}

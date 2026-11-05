@@ -168,6 +168,11 @@ def test_api(tmp_path):
         ov = c.get("/api/staff/overview", headers=h).json()
         assert ov["orders"][0]["tags"][0]["name"] == "EMMA"
         assert c.post("/api/staff/start_now/red", headers=h).json()["ok"]
+        assert c.get("/api/staff/stats", headers=h).json()["today"]["orders"] == 1
+        r = c.get(f"/api/staff/export.csv?token={tok}")
+        assert r.status_code == 200 and "EMMA" in r.text and "attachment" in r.headers["content-disposition"]
+        assert c.get("/api/staff/export.csv?day=x", headers=h).status_code == 400
+        assert c.post("/api/staff/backup", headers=h).json()["file"].endswith(".sqlite")
         assert c.get("/staff/").status_code == 200
 
 
@@ -239,3 +244,43 @@ def test_settings_setup_and_printer_switch(cfg_env):
     booth.staff_update_settings(d)                                  # empty api_key = keep
     assert booth.cfg.printer["api_key"] == "secret"
     assert booth.staff_test_printer(d["printer"])["state"] == "offline"
+
+
+def test_stats_close_day_backup_csv(env, tmp_path):
+    booth, printer, clock = env
+    order(booth, ("EMMA", "baloo", "star", "red"))
+    o2 = order(booth, ("OMA", "baloo", "stadium", "red"), ("OPA", "titan", "tree", "red"))
+    order(booth, ("LEO", "baloo", "bell", "gold"), ("MIA", "baloo", "bell", "gold"))      # unpaid, stays held
+    booth.staff_paid(o2["order_id"])
+    booth.staff_start_now("red")
+    run_until(booth, clock, lambda: booth.db.active_plate() and booth.db.active_plate()["status"] == "color_change")
+    printer.resume()
+    run_until(booth, clock, lambda: booth.db.active_plate()["status"] == "printed")
+    st = booth.stats()
+    assert st["orders"] == 3 and st["tags_printed"] == 3 and st["paid_cents"] == 200 and st["due_cents"] == 200
+    assert st["by_color"] == {"red": 3} and st["tags_open"] == 2 and st["free_tags"] == 3
+    with pytest.raises(BoothError):                                  # plate still on the bed
+        booth.staff_close_day()
+    pv = booth.close_day_preview()
+    assert pv["tags_unprinted"] == 2 and pv["orders_unpaid"] == 1
+    booth.staff_plate_cleared(booth.db.active_plate()["id"])
+    assert booth.close_day_preview()["orders_waiting_pickup"] == 2
+    res = booth.staff_close_day()
+    assert Path(res["backup"]).exists() and res["removed_files"] >= 3
+    assert booth.db.q1("SELECT COUNT(*) AS n FROM orders WHERE status='open'")["n"] == 0
+    assert booth.open_tag_count() == 0
+    assert booth.db.q1("SELECT status FROM orders WHERE number=3")["status"] == "cancelled"
+    csv = booth.export_csv(booth._day())
+    assert csv.count("\n") == 6 and "EMMA" in csv and "2,00" in csv
+    clock.advance(86400)                                             # next day: numbers restart
+    assert order(booth, ("NEU", "baloo", "star", "red"))["number"] == 1
+
+
+def test_auto_backup_rotates(env):
+    booth, _, clock = env
+    import booth.service as svc
+    for _ in range(svc.BACKUP_KEEP + 3):
+        booth._maybe_backup()
+        clock.advance(svc.BACKUP_EVERY_S)
+    files = list((booth.data / "backups").glob("booth-*.sqlite"))
+    assert len(files) == svc.BACKUP_KEEP
