@@ -3,7 +3,7 @@
 # based on Debian 13 "Trixie" - Bookworm's PrusaSlicer is too old), touch display.
 # Run from the cloned repository:
 #
-#   sudo deploy/pi/install.sh [--pin 2468] [--hotspot SSID PASSWORD] [--printer-ip 192.168.10.2]
+#   sudo deploy/pi/install.sh [--pin 2468] [--hotspot SSID PASSWORD] [--printer-ip 192.168.10.2] [--no-kiosk]
 #   sudo deploy/pi/install.sh --readonly        # last step: read-only root
 #   sudo deploy/pi/install.sh --writable        # undo, e.g. for an update
 #
@@ -22,6 +22,7 @@ HOTSPOT_PASS=""
 PI_IP=192.168.10.1
 PRINTER_IP=192.168.10.2
 MODE=install
+KIOSK=auto
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -29,6 +30,7 @@ while [ $# -gt 0 ]; do
         --user) USER_NAME="$2"; shift 2 ;;
         --hotspot) HOTSPOT_SSID="$2"; HOTSPOT_PASS="$3"; shift 3 ;;
         --printer-ip) PRINTER_IP="$2"; shift 2 ;;
+        --no-kiosk) KIOSK=no; shift ;;
         --readonly) MODE=readonly; shift ;;
         --writable) MODE=writable; shift ;;
         -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
@@ -73,8 +75,17 @@ fi
 say "packages"
 apt-get update
 apt-get install -y python3-venv python3-pip git curl openscad nodejs npm
-apt-get install -y chromium || apt-get install -y chromium-browser
-CHROMIUM="$(command -v chromium || command -v chromium-browser)"
+# hwclock (staff page sets the clock): its own package since Trixie
+apt-get install -y util-linux-extra 2>/dev/null || true
+# Kiosk screen only on a desktop image (labwc); on Lite / headless: backend only,
+# kiosk and staff page are then opened from another device's browser.
+if [ "$KIOSK" = auto ]; then
+    if command -v labwc >/dev/null || [ -e /usr/share/wayland-sessions/labwc.desktop ]; then KIOSK=yes; else KIOSK=no; fi
+fi
+if [ "$KIOSK" = yes ]; then
+    apt-get install -y chromium || apt-get install -y chromium-browser
+    CHROMIUM="$(command -v chromium || command -v chromium-browser)"
+fi
 apt-get install -y prusa-slicer || true
 PS_VER="$( (prusa-slicer --help 2>/dev/null || true) | head -1 | sed -n 's/^PrusaSlicer-\([0-9]*\.[0-9]*\).*/\1/p')"
 if [ -z "$PS_VER" ] || [ "$(printf '%s\n' 2.9 "$PS_VER" | sort -V | head -1)" != 2.9 ]; then
@@ -96,14 +107,20 @@ fi
 
 say "data partition (label BOOTHDATA) at $DATA"
 mkdir -p "$DATA"
-if ! grep -q "LABEL=BOOTHDATA" /etc/fstab; then
-    # data=journal + commit=1: an order written is on the card within a second
-    echo "LABEL=BOOTHDATA $DATA ext4 defaults,noatime,data=journal,commit=1,nofail,x-systemd.device-timeout=5s 0 2" >> /etc/fstab
-    systemctl daemon-reload
-fi
 if blkid -L BOOTHDATA >/dev/null; then
+    if ! grep -q "LABEL=BOOTHDATA" /etc/fstab; then
+        # data=journal + commit=1: an order written is on the card within a second
+        echo "LABEL=BOOTHDATA $DATA ext4 defaults,noatime,data=journal,commit=1,nofail,x-systemd.device-timeout=5s 0 2" >> /etc/fstab
+        systemctl daemon-reload
+    fi
     findmnt -rn "$DATA" >/dev/null || mount "$DATA"
 else
+    # no fstab entry without the partition: the service needs $DATA mounted if it is
+    # in fstab (RequiresMountsFor) and would never start
+    if grep -q "LABEL=BOOTHDATA" /etc/fstab; then
+        sed -i "/LABEL=BOOTHDATA/d" /etc/fstab
+        systemctl daemon-reload
+    fi
     echo "WARNING: no partition labelled BOOTHDATA. Orders would go to the root file system"
     echo "         and be lost once it is read-only. See README.md, 'Data partition'."
 fi
@@ -169,6 +186,7 @@ systemctl daemon-reload
 systemctl enable nametag-booth
 systemctl restart nametag-booth
 
+if [ "$KIOSK" = yes ]; then
 say "desktop: autologin, no screen blanking, kiosk browser"
 raspi-config nonint do_boot_behaviour B4      # desktop, automatic login
 raspi-config nonint do_blanking 1             # 1 = blanking off
@@ -181,6 +199,9 @@ grep -q nametag-kiosk "$AUTOSTART" || echo "/usr/local/bin/nametag-kiosk &" >> "
 chown "$USER_NAME:" "$AUTOSTART"
 if [ -e "$USER_HOME/.config/wayfire.ini" ] && ! pgrep -x labwc >/dev/null; then
     echo "NOTE: this desktop may run wayfire, not labwc: switch with raspi-config (Advanced > Wayland > labwc)"
+fi
+else
+    say "no desktop (Lite image or --no-kiosk): kiosk screen skipped, open http://<this Pi>:8080/kiosk/ in a browser"
 fi
 
 say "self-check"
