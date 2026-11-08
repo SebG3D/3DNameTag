@@ -6,7 +6,7 @@ import { setSound } from "./sound";
 import { canGoNext, initialState, previewKey, reducer, STEPS } from "./state";
 import { Dots, IdleGuard, Nav, StaffCorner, STEP_COLORS } from "./components/Chrome";
 import { Attract } from "./screens/Attract";
-import { ColorScreen, FontScreen, NameScreen, ShapeScreen } from "./screens/Wizard";
+import { ColorScreen, CustomerScreen, FontScreen, NameScreen, ShapeScreen } from "./screens/Wizard";
 import { DoneScreen, OfflineScreen, ReviewScreen } from "./screens/Review";
 
 // Design size; the stage is scaled to the real screen (1280x800, 1920x1080, ...).
@@ -80,6 +80,7 @@ function Kiosk({ cfg }: { cfg: Config }) {
       <StaffCorner />
       {step >= 0 && <Dots screen={s} />}
       {s === "attract" && <Attract status={status} onStart={() => dispatch({ type: "START" })} />}
+      {s === "customer" && <CustomerScreen state={state} dispatch={dispatch} />}
       {s === "name" && <NameScreen state={state} dispatch={dispatch} />}
       {s === "font" && <FontScreen state={state} dispatch={dispatch} />}
       {s === "shape" && <ShapeScreen state={state} dispatch={dispatch} />}
@@ -88,7 +89,7 @@ function Kiosk({ cfg }: { cfg: Config }) {
       {s === "done" && <DoneScreen state={state} dispatch={dispatch} />}
       {step >= 0 && step < STEPS.length - 1 && (
         <Nav
-          onBack={() => dispatch(step > 0 ? { type: "BACK" } : state.cart.length ? { type: "UNDO_ADD" } : { type: "RESET" })}
+          onBack={() => dispatch(s === "name" && state.cart.length ? { type: "UNDO_ADD" } : step > 0 ? { type: "BACK" } : { type: "RESET" })}
           onNext={() => dispatch({ type: "NEXT" })}
           nextDisabled={!canGoNext(state) || (s === "color" && !state.draft.preview)}
         />

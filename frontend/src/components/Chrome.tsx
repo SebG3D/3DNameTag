@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { STEPS, type Screen } from "../state";
 
-export const STEP_COLORS = ["#E53935", "#FB8C00", "#F9A825", "#43A047", "#1E88E5"];
+export const STEP_COLORS = ["#EC407A", "#E53935", "#FB8C00", "#F9A825", "#43A047", "#1E88E5"];
 
 export function Dots({ screen }: { screen: Screen }) {
   const step = STEPS.indexOf(screen);

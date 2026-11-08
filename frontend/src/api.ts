@@ -40,6 +40,7 @@ export type Preview = Paths & {
 export type OrderResult = {
   order_id: number;
   number: number;
+  customer: string;
   tags: number;
   price_cents: number;
   needs_payment: boolean;
@@ -78,7 +79,9 @@ export const api = {
   config: () => call<Config>("/api/config", undefined, 8000),
   status: () => call<Status>("/api/status", undefined, 5000),
   fit: (name: string, font: string) => call<Record<string, boolean>>("/api/fit", { name, font }, 10000),
-  icon: (shape: string) => call<Paths>(`/api/shapes/${encodeURIComponent(shape)}/icon`),
+  icon: (shape: string, name?: string, font?: string) => call<Paths>(`/api/shapes/${encodeURIComponent(shape)}/icon`
+    + (name && font ? `?name=${encodeURIComponent(name)}&font=${encodeURIComponent(font)}` : "")),
   preview: (name: string, font: string, shape: string) => call<Preview>("/api/preview", { name, font, shape }, 120000),
-  order: (tags: { preview_id: string; text_color: string }[]) => call<OrderResult>("/api/orders", { tags }),
+  order: (tags: { preview_id: string; text_color: string }[], customer: string) =>
+    call<OrderResult>("/api/orders", { tags, customer }),
 };

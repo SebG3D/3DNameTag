@@ -153,11 +153,16 @@ def test_api(tmp_path):
         assert icon["outline"].startswith("M") and icon["text"].startswith("M")
         assert (tmp_path / "icons" / "tree.json").exists()
         assert c.get("/api/shapes/bone/icon").json()["error"] == "bad_shape"
+        real = c.get("/api/shapes/tree/icon", params={"name": "jonas", "font": "titan"}).json()
+        assert real["outline"].startswith("M") and real["text"] != icon["text"]
+        assert c.get("/api/shapes/tree/icon", params={"name": "jonas", "font": "titan"}).json() == real
+        assert c.get("/api/shapes/stadium/icon", params={"name": "jo$", "font": "titan"}).json()["error"] == "bad_name"
         assert c.post("/api/fit", json={"name": "emma", "font": "baloo"}).json()["star"] is True
         p = c.post("/api/preview", json={"name": "emma", "font": "baloo", "shape": "bell"}).json()
         assert p["name"] == "EMMA" and p["estimated_min"] > 0
-        r = c.post("/api/orders", json={"tags": [{"preview_id": p["preview_id"], "text_color": "red"}]}).json()
-        assert r["number"] == 1 and not r["needs_payment"]
+        r = c.post("/api/orders", json={"tags": [{"preview_id": p["preview_id"], "text_color": "red"}],
+                                        "customer": " lena  m "}).json()
+        assert r["number"] == 1 and not r["needs_payment"] and r["customer"] == "LENA M"
         assert c.post("/api/orders", json={"tags": [{"preview_id": "p_x", "text_color": "red"}]}).json()["error"] \
             == "preview_expired"
         assert c.get("/api/status").json()["queue_length"] == 1
@@ -166,7 +171,8 @@ def test_api(tmp_path):
         tok = c.post("/api/staff/login", json={"pin": booth.cfg.staff_pin}).json()["token"]
         h = {"X-Staff-Token": tok}
         ov = c.get("/api/staff/overview", headers=h).json()
-        assert ov["orders"][0]["tags"][0]["name"] == "EMMA"
+        assert ov["orders"][0]["tags"][0]["name"] == "EMMA" and ov["orders"][0]["customer"] == "LENA M"
+        assert ";LENA M;" in c.get("/api/staff/export.csv", headers=h).text
         assert c.post("/api/staff/start_now/red", headers=h).json()["ok"]
         assert c.get("/api/staff/stats", headers=h).json()["today"]["orders"] == 1
         r = c.get(f"/api/staff/export.csv?token={tok}")

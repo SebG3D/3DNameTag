@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS orders (
     price_cents INTEGER NOT NULL,
     paid INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'open',
-    done_at REAL
+    done_at REAL,
+    customer TEXT NOT NULL DEFAULT ''   -- who ordered (kiosk asks first)
 );
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY,
@@ -73,6 +74,8 @@ class DB:
         cols = {r[1] for r in self.con.execute("PRAGMA table_info(orders)")}
         if "eta_raw" not in cols:                      # forecast at order time (s), for learning
             self.con.execute("ALTER TABLE orders ADD COLUMN eta_raw REAL")
+        if "customer" not in cols:
+            self.con.execute("ALTER TABLE orders ADD COLUMN customer TEXT NOT NULL DEFAULT ''")
         self.lock = threading.RLock()
 
     @contextmanager
@@ -105,7 +108,8 @@ class DB:
                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, json.dumps(value)))
 
     # --- orders ---
-    def create_order(self, tags: list[dict], price_cents: int, free_tags: int, now: float | None = None) -> dict:
+    def create_order(self, tags: list[dict], price_cents: int, free_tags: int, now: float | None = None,
+                     customer: str = "") -> dict:
         """tags: dicts with name, font, shape, text_color, stl, area_mm2, w_mm, h_mm.
         The first `free_tags` are queued at once, the rest wait for payment."""
         now = now or time.time()
@@ -113,8 +117,8 @@ class DB:
         paid = 1 if price_cents == 0 else 0
         with self.tx() as c:
             n = c.execute("SELECT COALESCE(MAX(number), 0) + 1 FROM orders WHERE day=?", (day,)).fetchone()[0]
-            oid = c.execute("INSERT INTO orders(number, day, created, price_cents, paid) VALUES(?,?,?,?,?)",
-                            (n, day, now, price_cents, paid)).lastrowid
+            oid = c.execute("INSERT INTO orders(number, day, created, price_cents, paid, customer)"
+                            " VALUES(?,?,?,?,?,?)", (n, day, now, price_cents, paid, customer)).lastrowid
             for i, t in enumerate(tags, 1):
                 free = i <= free_tags
                 status = "queued" if free or paid else "held"

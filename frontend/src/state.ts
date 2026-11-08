@@ -2,9 +2,10 @@ import type { OrderResult, Preview } from "./api";
 
 export const NAME_RE = /^[A-Z0-9ÄÖÜß\- ]$/;
 
-export type Screen = "attract" | "name" | "font" | "shape" | "color" | "review" | "done";
-/** Wizard steps with progress dots (attract/done have none). */
-export const STEPS: Screen[] = ["name", "font", "shape", "color", "review"];
+export type Screen = "attract" | "customer" | "name" | "font" | "shape" | "color" | "review" | "done";
+/** Wizard steps with progress dots (attract/done have none). "customer" = who
+ *  orders; "name" = the text on each tag (own name, siblings, grandma ...). */
+export const STEPS: Screen[] = ["customer", "name", "font", "shape", "color", "review"];
 
 export type Draft = {
   name: string;
@@ -26,6 +27,7 @@ export type CartItem = {
 
 export type State = {
   screen: Screen;
+  customer: string;          // who orders: shown to the staff with the pickup number
   draft: Draft;
   cart: CartItem[];          // finished tags of this order (without the draft)
   order: OrderResult | null;
@@ -35,7 +37,7 @@ const emptyDraft: Draft = {
   name: "", fontId: null, shapeId: null, colorId: null,
   preview: null, previewKey: null, previewError: null,
 };
-export const initialState: State = { screen: "attract", draft: emptyDraft, cart: [], order: null };
+export const initialState: State = { screen: "attract", customer: "", draft: emptyDraft, cart: [], order: null };
 
 export const cleanName = (n: string) => n.trim().replace(/ +/g, " ");
 export const previewKey = (d: Draft) =>
@@ -70,6 +72,7 @@ const move = (s: State, d: 1 | -1): Screen => {
 export function canGoNext(s: State): boolean {
   const d = s.draft;
   switch (s.screen) {
+    case "customer": return cleanName(s.customer).length > 0;
     case "name": return cleanName(d.name).length > 0;
     case "font": return !!d.fontId;
     case "shape": return !!d.shapeId;
@@ -81,17 +84,26 @@ export function canGoNext(s: State): boolean {
 export function reducer(s: State, a: Action): State {
   const d = s.draft;
   switch (a.type) {
-    case "START": return { ...initialState, screen: "name" };
+    case "START": return { ...initialState, screen: "customer" };
     case "GOTO": return { ...s, screen: a.screen };
-    case "NEXT": return canGoNext(s) ? { ...s, screen: move(s, 1) } : s;
+    case "NEXT": {
+      if (!canGoNext(s)) return s;
+      // first tag: suggest the customer's own name, they may type another one
+      if (s.screen === "customer" && s.cart.length === 0 && !d.name)
+        return { ...s, customer: cleanName(s.customer), screen: "name", draft: { ...d, name: cleanName(s.customer) } };
+      return { ...s, screen: move(s, 1) };
+    }
     case "BACK": return { ...s, screen: move(s, -1) };
     case "KEY": {
       const k = a.key.length === 1 && a.key !== "ß" ? a.key.toUpperCase() : a.key;
-      if (!NAME_RE.test(k) || d.name.length >= a.max) return s;
-      if (k === " " && (d.name === "" || d.name.endsWith(" "))) return s;
-      return { ...s, draft: { ...d, name: d.name + k } };
+      const cur = s.screen === "customer" ? s.customer : d.name;
+      if (!NAME_RE.test(k) || cur.length >= a.max) return s;
+      if (k === " " && (cur === "" || cur.endsWith(" "))) return s;
+      return s.screen === "customer" ? { ...s, customer: cur + k } : { ...s, draft: { ...d, name: cur + k } };
     }
-    case "BACKSPACE": return { ...s, draft: { ...d, name: d.name.slice(0, -1) } };
+    case "BACKSPACE":
+      return s.screen === "customer" ? { ...s, customer: s.customer.slice(0, -1) }
+        : { ...s, draft: { ...d, name: d.name.slice(0, -1) } };
     case "SET_FONT": return { ...s, draft: { ...d, fontId: a.fontId } };
     case "SET_SHAPE": return { ...s, draft: { ...d, shapeId: a.shapeId } };
     case "SET_COLOR": return { ...s, draft: { ...d, colorId: a.colorId } };
@@ -111,7 +123,7 @@ export function reducer(s: State, a: Action): State {
     case "UNDO_ADD": {
       // back from the name screen of an extra tag: the last tag becomes the draft again
       const last = s.cart[s.cart.length - 1];
-      if (!last) return initialState;
+      if (!last) return { ...initialState, screen: "customer", customer: s.customer };
       const draft: Draft = { ...emptyDraft, name: last.name, fontId: last.fontId, shapeId: last.shapeId, colorId: last.colorId, preview: last.preview };
       return { ...s, cart: s.cart.slice(0, -1), draft: { ...draft, previewKey: previewKey(draft) }, screen: "review" };
     }

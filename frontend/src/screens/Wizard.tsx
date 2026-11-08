@@ -5,28 +5,44 @@ import { Keyboard } from "../components/Keyboard";
 import { Spinner } from "../components/Chrome";
 import { TagSvg } from "../components/TagSvg";
 import { useIcons } from "../icons";
+import type { Paths } from "../api";
 import { cleanName, type Action, type State } from "../state";
 
 type P = { state: State; dispatch: Dispatch<Action> };
 
-export function NameScreen({ state, dispatch }: P) {
+function TypeScreen({ title, sub, value, dispatch }: { title: string; sub?: string; value: string; dispatch: Dispatch<Action> }) {
   const cfg = useConfig();
   const [shake, setShake] = useState(0);
-  const name = state.draft.name;
-  const n = state.cart.length + 1;
   const onKey = (k: string) => {
-    if (name.length >= cfg.name_max) { setShake((x) => x + 1); return; }
+    if (value.length >= cfg.name_max) { setShake((x) => x + 1); return; }
     dispatch({ type: "KEY", key: k, max: cfg.name_max });
   };
   return (
     <div className="screen">
-      <h1>{n === 1 ? "Wie heißt du?" : `Welcher Name kommt auf Anhänger ${n}?`}</h1>
+      <h1>{title}</h1>
+      {sub && <p className="sub">{sub}</p>}
       <div key={shake} className={shake ? "name-field shake" : "name-field"}>
-        <span>{name || " "}</span><span className="caret" />
+        <span>{value || " "}</span><span className="caret" />
       </div>
-      <div className="muted">{name.length}/{cfg.name_max}</div>
+      <div className="muted">{value.length}/{cfg.name_max}</div>
       <Keyboard onKey={onKey} onBackspace={() => dispatch({ type: "BACKSPACE" })} />
     </div>
+  );
+}
+
+/** Who orders: the staff call this name with the pickup number. */
+export function CustomerScreen({ state, dispatch }: P) {
+  return <TypeScreen title="Wie heißt du?" sub="Damit wir wissen, wem die Anhänger gehören." value={state.customer} dispatch={dispatch} />;
+}
+
+/** Text on the tag: own name (suggested for the first tag) or someone else's. */
+export function NameScreen({ state, dispatch }: P) {
+  const n = state.cart.length + 1;
+  return (
+    <TypeScreen
+      title={n === 1 ? "Was soll auf deinem Anhänger stehen?" : `Was soll auf Anhänger ${n} stehen?`}
+      sub={n === 1 ? "Dein Name – oder einer für Geschwister, Oma, Papa …" : "Zum Beispiel ein Name für Geschwister, Oma, Papa …"}
+      value={state.draft.name} dispatch={dispatch} />
   );
 }
 
@@ -40,9 +56,8 @@ export function FontScreen({ state, dispatch }: P) {
         {cfg.fonts.map((f) => {
           const sel = state.draft.fontId === f.id;
           return (
-            <button key={f.id} className={sel ? "card sel" : "card"} onClick={() => dispatch({ type: "SET_FONT", fontId: f.id })}>
+            <button key={f.id} aria-label={f.label} className={sel ? "card sel" : "card"} onClick={() => dispatch({ type: "SET_FONT", fontId: f.id })}>
               <span className="font-sample" style={{ fontFamily: fontFamily(f.id), fontSize: name.length > 8 ? 40 : 54 }}>{name}</span>
-              <span className="card-label">{f.label}</span>
               {sel && <span className="check">✓</span>}
             </button>
           );
@@ -70,6 +85,9 @@ export function ShapeScreen({ state, dispatch }: P) {
     if (fit && shapeId && fit[shapeId] === false) dispatch({ type: "SET_SHAPE", shapeId: null });
   }, [fit, shapeId, dispatch]);
 
+  // icons with the real name in the chosen font, for the shapes it fits on;
+  // the sample icons stand in until they arrive
+  const real = useRealIcons(cleanName(name), fontId, fit);
   const noneFits = fit && cfg.shapes.every((s) => fit[s.id] === false);
   return (
     <div className="screen">
@@ -81,7 +99,7 @@ export function ShapeScreen({ state, dispatch }: P) {
           {cfg.shapes.map((s) => {
             const ok = fit?.[s.id] !== false;
             const sel = shapeId === s.id;
-            const ic = icons[s.id];
+            const ic = real[s.id] ?? icons[s.id];
             return (
               <button key={s.id} disabled={!ok} className={sel ? "card shape sel" : "card shape"}
                 onClick={() => dispatch({ type: "SET_SHAPE", shapeId: s.id })}>
@@ -98,6 +116,28 @@ export function ShapeScreen({ state, dispatch }: P) {
       )}
     </div>
   );
+}
+
+const realCache = new Map<string, Paths>();     // name|font|shape, for this page load
+
+function useRealIcons(name: string, fontId: string | null, fit: Record<string, boolean> | null) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!fontId || !name || !fit) return;
+    let live = true;
+    for (const [shape, ok] of Object.entries(fit)) {
+      const k = `${name}|${fontId}|${shape}`;
+      if (!ok || realCache.has(k)) continue;
+      api.icon(shape, name, fontId).then((p) => { realCache.set(k, p); if (live) bump((x) => x + 1); }).catch(() => {});
+    }
+    return () => { live = false; };
+  }, [name, fontId, fit]);
+  const out: Record<string, Paths> = {};
+  if (fontId && fit) for (const shape of Object.keys(fit)) {
+    const p = realCache.get(`${name}|${fontId}|${shape}`);
+    if (p) out[shape] = p;
+  }
+  return out;
 }
 
 function PreviewBox({ state, dispatch }: P) {

@@ -44,6 +44,7 @@ class OrderItem(BaseModel):
 
 class OrderReq(BaseModel):
     tags: list[OrderItem]
+    customer: str = Field(default="", max_length=40)
 
 
 class Pin(BaseModel):
@@ -92,12 +93,12 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
                 "size_mm": [p.w_mm, p.h_mm], "estimated_min": round(booth.tag_estimate_s(p.area_mm2) / 60, 1)}
 
     @app.get("/api/shapes/{shape}/icon")
-    async def shape_icon(shape: str):
-        return await run_in_threadpool(booth.shape_icon, shape)
+    async def shape_icon(shape: str, name: str = Query(default="", max_length=40), font: str = ""):
+        return await run_in_threadpool(booth.shape_icon, shape, name, font)
 
     @app.post("/api/orders")
     def order(req: OrderReq):
-        return booth.place_order([t.model_dump() for t in req.tags])
+        return booth.place_order([t.model_dump() for t in req.tags], req.customer)
 
     # ---------------- staff
     @app.post("/api/staff/login")

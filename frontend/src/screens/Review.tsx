@@ -35,7 +35,7 @@ export function ReviewScreen({ state, dispatch }: P) {
     try {
       let cart = state.cart, cur = d.preview;
       try {
-        dispatch({ type: "ORDER_OK", order: await api.order(items(cart, cur)) });
+        dispatch({ type: "ORDER_OK", order: await api.order(items(cart, cur), state.customer) });
         return;
       } catch (e) {
         if (!(e instanceof ApiError) || e.code !== "preview_expired") throw e;
@@ -44,7 +44,7 @@ export function ReviewScreen({ state, dispatch }: P) {
       cart = await Promise.all(cart.map(async (c) => ({ ...c, preview: await api.preview(c.name, c.fontId, c.shapeId) })));
       cur = await api.preview(cur.name, d.fontId!, d.shapeId!);
       dispatch({ type: "REFRESH_PREVIEWS", cart, draft: cur });
-      dispatch({ type: "ORDER_OK", order: await api.order(items(cart, cur)) });
+      dispatch({ type: "ORDER_OK", order: await api.order(items(cart, cur), state.customer) });
     } catch (e) {
       const code = e instanceof ApiError ? e.code : "x";
       setError(ERRORS[code] ?? "Das hat leider nicht geklappt. Versuch es nochmal!");
@@ -114,7 +114,7 @@ export function DoneScreen({ state, dispatch }: P) {
       {confetti.map((c, i) => (
         <span key={i} className="confetti" style={{ left: `${c.left}%`, background: c.color, animationDuration: `${c.dur}s`, animationDelay: `${c.delay}s`, rotate: `${c.rot}deg` }} />
       ))}
-      <h1>🎉 Super!</h1>
+      <h1>🎉 Super{o.customer ? `, ${o.customer}` : ""}!</h1>
       <p className="done-text">Deine Nummer:</p>
       <div className="done-num">{o.number}</div>
       <p className="done-text">Fertig ungefähr um <b>{o.eta} Uhr</b>.</p>

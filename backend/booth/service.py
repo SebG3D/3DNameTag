@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import shutil
+import tempfile
 import threading
 import time
 import uuid
@@ -96,6 +97,7 @@ class Booth:
             (self.data / d).mkdir(parents=True, exist_ok=True)
         self.db = DB(self.data / "booth.sqlite")
         self.printer = printer or make_printer(cfg.printer)
+        self._icons: dict[tuple, dict] = {}                   # shape picker with the real name
         self.previews: dict[str, Preview] = {}
         # plate id -> last seen printer progress (persisted: survives a restart)
         self._progress: dict[int, float] = {int(k): v for k, v in self.db.get_state("plate_progress", {}).items()}
@@ -172,12 +174,26 @@ class Booth:
         self.previews[pid] = p
         return p
 
-    def shape_icon(self, shape: str) -> dict:
-        """Outline + sample text of a shape for the kiosk shape picker.
-        Rendered once (2D only) and cached in the data dir; delete
-        data/icons/ after changing a shape."""
+    def shape_icon(self, shape: str, raw_name: str = "", font: str = "") -> dict:
+        """Outline + text of a shape for the kiosk shape picker (2D only).
+        With name + font: the customer's real text (kept in RAM for a while);
+        without: a sample name, cached in the data dir - delete data/icons/
+        after changing a shape."""
         if shape not in self.shapes:
             raise BoothError("bad_shape")
+        if raw_name.strip() and font:
+            name = self._name(raw_name)
+            f, s = self._font_shape(font, shape)
+            if not layout(name, f, s, self.setup).fits:
+                raise BoothError("too_long")
+            key = (name, font, shape)
+            if key not in self._icons:
+                with tempfile.TemporaryDirectory() as d:
+                    outline, text = render_svg(name, f, s, self.setup, Path(d) / "icon.svg")
+                if len(self._icons) >= 64:
+                    self._icons.pop(next(iter(self._icons)))
+                self._icons[key] = {"outline": outline, "text": text}
+            return self._icons[key]
         cache = self.data / "icons" / f"{shape}.json"
         if cache.exists():
             return json.loads(cache.read_text())
@@ -204,8 +220,10 @@ class Booth:
     def queue_full(self) -> bool:
         return self.open_tag_count() >= self.cfg.queue_limit
 
-    def place_order(self, items: list[dict]) -> dict:
-        """items: [{preview_id, text_color}]"""
+    def place_order(self, items: list[dict], customer: str = "") -> dict:
+        """items: [{preview_id, text_color}]; customer: who orders (the tags may
+        carry other names: siblings, grandma ...)"""
+        customer = self._name(customer) if customer.strip() else ""
         if not 1 <= len(items) <= self.cfg.max_tags_per_order:
             raise BoothError("bad_count")
         if self.queue_full():
@@ -229,7 +247,7 @@ class Booth:
             self.previews.pop(p.id, None)
             shutil.rmtree(p.stl.parent, ignore_errors=True)
         price = self.cfg.price_cents(len(tags))
-        order = self.db.create_order(tags, price, self.cfg.free_tags, self.clock())
+        order = self.db.create_order(tags, price, self.cfg.free_tags, self.clock(), customer=customer)
         # whole order (kids wait for all their tags); the forecast does not know
         # later arrivals, so it is scaled by the learned eta_factor, +2 min,
         # rounded up to 5 min (early is fine, late is not)
@@ -238,7 +256,7 @@ class Booth:
             c.execute("UPDATE orders SET eta_raw=? WHERE id=?", (raw, order["id"]))
         eta = self.clock() + raw * self.eta_factor + 120
         eta = -(-eta // 300) * 300
-        return {"order_id": order["id"], "number": order["number"], "tags": len(tags),
+        return {"order_id": order["id"], "number": order["number"], "customer": customer, "tags": len(tags),
                 "price_cents": price, "needs_payment": price > 0,
                 "eta": time.strftime("%H:%M", time.localtime(eta)), "eta_s": int(eta - self.clock())}
 
@@ -739,17 +757,17 @@ class Booth:
         import csv
         import io
         rows = self.db.q(
-            "SELECT o.day, o.number, o.status AS order_status, o.paid, o.price_cents, t.idx, t.name, t.font, "
+            "SELECT o.day, o.number, o.customer, o.status AS order_status, o.paid, o.price_cents, t.idx, t.name, t.font, "
             "t.shape, t.text_color, t.free, t.status AS tag_status, t.plate_id, "
             "datetime(o.created, 'unixepoch', 'localtime') AS created "
             "FROM tags t JOIN orders o ON o.id=t.order_id " + ("WHERE o.day=? " if day else "") +
             "ORDER BY o.id, t.idx", *([day] if day else []))
         out = io.StringIO()
         w = csv.writer(out, delimiter=";")
-        w.writerow(["Tag", "Nummer", "Bestellung", "bezahlt", "Preis (EUR)", "Pos", "Name", "Schrift", "Form",
+        w.writerow(["Tag", "Nummer", "Kunde", "Bestellung", "bezahlt", "Preis (EUR)", "Pos", "Name", "Schrift", "Form",
                     "Farbe", "gratis", "Status", "Platte", "Zeit"])
         for r in rows:
-            w.writerow([r["day"], r["number"], r["order_status"], r["paid"],
+            w.writerow([r["day"], r["number"], r["customer"], r["order_status"], r["paid"],
                         f"{r['price_cents'] / 100:.2f}".replace(".", ","), r["idx"], r["name"], r["font"],
                         r["shape"], r["text_color"], r["free"], r["tag_status"], r["plate_id"] or "", r["created"]])
         return out.getvalue()
