@@ -234,6 +234,7 @@ def main():
                     help="booth.json (default config/booth.json)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)   # printer poll every 2 s: ~43k lines/day
     import uvicorn
     booth = Booth(load_config(a.config, data_dir=a.data), setup_name=a.setup)
     uvicorn.run(create_app(booth), host=a.host, port=a.port)
