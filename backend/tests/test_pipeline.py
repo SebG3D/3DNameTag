@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -6,11 +7,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from nametag.fonts import load_fonts                    # noqa: E402
 from nametag.names import clean_name                    # noqa: E402
-from nametag.plate import pack, BED, MARGIN             # noqa: E402
+from nametag.plate import pack, BED, MARGIN, GAP, TOWER_KEEP_OUT  # noqa: E402
 from nametag.render import layout                       # noqa: E402
 from nametag.setup import load_setup                    # noqa: E402
 from nametag.shapes import load_shapes                  # noqa: E402
-from nametag.slicer import insert_color_change, parse_time, SliceError  # noqa: E402
+from nametag.slicer import check_tower, finish_gcode, parse_time, SliceError  # noqa: E402
 
 
 def test_clean_name():
@@ -28,17 +29,32 @@ def test_parse_time():
     assert parse_time("1d 0h 0m 1s") == 86401
 
 
-GCODE = """;LAYER_CHANGE\n;Z:2.4\n;HEIGHT:0.2\nG1 Z2.4\n;AFTER_LAYER_CHANGE\nG1 X1
-;LAYER_CHANGE\n;Z:2.6\n;HEIGHT:0.2\nG1 Z2.6\n;AFTER_LAYER_CHANGE\nG1 X2\n"""
+GCODE = """T0
+;LAYER_CHANGE\n;Z:2.4\n;HEIGHT:0.2\nG1 Z2.4\n;AFTER_LAYER_CHANGE\nG1 X1
+;LAYER_CHANGE\n;Z:2.6\n;HEIGHT:0.2\nG1 Z2.6\n;AFTER_LAYER_CHANGE\n;TYPE:Wipe tower\nM600 ; booth: text colour\nT1\nG1 X2\n"""
 
 
-def test_color_change_position():
-    out, z = insert_color_change(GCODE, 2.4)
+def test_finish_gcode():
+    out, z = finish_gcode(GCODE, 2.4)
     assert z == 2.6
+    assert "T0" not in out and "T1" not in out
     assert out.count("M600") == 1
-    assert out.index("G1 Z2.6") < out.index("M600") < out.index(";AFTER_LAYER_CHANGE\nG1 X2")
+    meta = finish_gcode(GCODE + "; filament used [mm] = 2395.46, 76.95\n; nozzle_diameter = 0.25,0.25\n", 2.4)[0]
+    assert "; filament used [mm] = 2472.41" in meta and "; nozzle_diameter = 0.25\n" in meta
+    with pytest.raises(SliceError):                 # colour change not right above the base
+        finish_gcode(GCODE, 2.2)
+    with pytest.raises(SliceError):                 # no colour change at all
+        finish_gcode(GCODE.replace("M600 ; booth: text colour\n", ""), 2.4)
+
+
+def test_check_tower():
+    x0, y0 = TOWER_KEEP_OUT[0] + 2, TOWER_KEEP_OUT[1] + 2
+    ok = f";TYPE:Wipe tower\nG1 X{x0} Y{y0} E1\nG1 X{x0 + 10} E1\n;TYPE:Perimeter\nG1 X5 Y5 E1\n"
+    check_tower(ok)
     with pytest.raises(SliceError):
-        insert_color_change(GCODE, 3.0)
+        check_tower(ok.replace(f"X{x0 + 10}", "X100"))
+    with pytest.raises(SliceError):
+        check_tower(";TYPE:Perimeter\nG1 X5 Y5 E1\n")
 
 
 def test_pack_stays_on_bed():
@@ -48,6 +64,10 @@ def test_pack_stays_on_bed():
     for p in placed:
         assert p.x >= MARGIN and p.y >= MARGIN
         assert p.x + p.w <= BED[0] - MARGIN + 1e-9 and p.y + p.h <= BED[1] - MARGIN + 1e-9
+    kx0, ky0, kx1, ky1 = TOWER_KEEP_OUT
+    for p in placed:            # wipe tower corner stays free (plus gap)
+        assert (p.x + p.w + GAP <= kx0 + 1e-9 or p.x >= kx1 + GAP - 1e-9
+                or p.y + p.h + GAP <= ky0 + 1e-9 or p.y >= ky1 + GAP - 1e-9), p
     for a in placed:            # no overlaps
         for b in placed:
             if a is not b:
@@ -67,21 +87,47 @@ def test_shapes_and_layout(setup_name):
     assert layout("EMMA", fonts["baloo"], shapes["tree"], setup).rot == 90
 
 
+def test_pack_fills_around_tower():
+    """Small tags still use the shelf next to the tower."""
+    placed, rest = pack([(f"t{i}", 40, 15) for i in range(60)])
+    assert not rest or len(placed) >= 40
+    assert any(p.y + p.h > TOWER_KEEP_OUT[1] for p in placed)
+
+
 def test_setups_on_layer_boundary():
-    for name in ["nozzle040", "nozzle040s", "nozzle025"]:
+    for name in ["nozzle040", "nozzle040s", "nozzle025", "nozzle025petg"]:
         s = load_setup(name)
         assert s.profile.exists()
 
 
-def test_plate_text_layers(tmp_path):
-    """Full pipeline: base in profile layers, text in text_layer_h layers, M600 between."""
+@pytest.mark.parametrize("setup_name", ["nozzle040s", "nozzle025petg", "nozzle025petg_b3w"])
+def test_plate_text_layers(tmp_path, setup_name):
+    """Full pipeline: base on tool 1, text on tool 2 in text_layer_h layers,
+    M600 at the wipe tower between, no T lines left."""
     from nametag.plate import build_plate
     from nametag.render import render_tag
     from nametag.slicer import slice_plate
-    setup = load_setup("nozzle040s")
+    setup = load_setup(setup_name)
     fonts, shapes = load_fonts(), load_shapes()
     r = render_tag("EMMA", fonts["baloo"], shapes["stadium"], setup, tmp_path, "t")
     build_plate({"t": r["files"]["tag"]}, tmp_path / "plate.3mf", setup)
     res = slice_plate([tmp_path / "plate.3mf"], tmp_path / "plate.gcode", setup)
     assert res.color_change_z == pytest.approx(setup.base_h + setup.text_layer_h)
-    assert [ln for ln in res.gcode.read_text().splitlines() if ln.startswith("M600")] == ["M600 ; booth: text colour"]
+    lines = res.gcode.read_text().splitlines()
+    assert [ln for ln in lines if ln.startswith("M600")] == ["M600 ; booth: text colour"]
+    assert not [ln for ln in lines if ln.strip() in ("T0", "T1")]
+    i = lines.index("M600 ; booth: text colour")
+    if setup.color_change == "tower":
+        assert ";TYPE:Wipe tower" in lines[i - 30:i]            # colour change happens at the tower
+    else:
+        assert not [ln for ln in lines if ln == ";TYPE:Wipe tower"]
+        end = next(j for j in range(i, len(lines)) if lines[j].startswith("G1 E0.8 F2700 ; undo our retract"))
+        block = lines[i - 3:end + 1]
+        assert "G1 X160 Y-15 F12000 ; left of the wiper pad" in block
+        assert any(ln.startswith(f"G1 Z{setup.wiper_z:g}") for ln in block)
+        at = [next(k for k, ln in enumerate(block) if ln.startswith(c)) for c in ("M211 S0", f"G1 Z{setup.wiper_z:g}", "M211 S1")]
+        assert at == sorted(at)                                 # endstops off only around the dip
+        # extrusion inside the block is purge only: retract and its undo cancel out
+        e = [float(m[1]) for ln in block if (m := re.match(r"G1 E(-?[\d.]+)", ln))]
+        assert sum(e) == pytest.approx(6.0)
+    assert not [ln for ln in lines if re.match(r"; (filament used \[\w+\]|nozzle_diameter) = .*,", ln)]  # one tool

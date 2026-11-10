@@ -7,9 +7,9 @@ day + text colour via M600). Plan: `docs/PLAN.md`.
 ## Layout
 - `fonts/` – six OFL/Apache fonts: `src/` upstream, `ttf/` + `woff2/` built by `tools/build_fonts.py`, list in `fonts.json`
 - `scad/lib/tag.scad` – tag core (base, text, hole); `scad/shapes/<id>/` – shape plugins (`shape.json` + `shape.scad`, see `backend/nametag/shapes.py`)
-- `slicer/profiles/` – flat PrusaSlicer profiles (`tools/make_profile.py`): Core One 0.4 (0.20 mm BALANCED) and 0.25 (0.15 mm SPEED), Prusament PLA, plain G-code
-- `config/print.json` – print setups (profile, scale, base/text height, hole, min text size); `active` is used by default, tools take `--setup`
-- `backend/nametag/` – pipeline: names → layout/render (OpenSCAD) → plate packing (3MF with text layer range) → slicing + M600
+- `slicer/profiles/` – flat PrusaSlicer profiles (`tools/make_profile.py`): Core One 0.4 (0.20 mm BALANCED) and 0.25 (0.15 mm SPEED), Prusament PLA; 0.25 also with Prusament PETG. Plain G-code, set up as two tools on one nozzle (text = tool 2, tool change = M600) so PrusaSlicer can build a wipe tower; bed stays hot after a plate
+- `config/print.json` – print setups (profile, scale, base/text height, hole, min text size, `color_change`: `tower` | `wiper` + `wiper_z`); `active` is used by default, tools take `--setup`
+- `backend/nametag/` – pipeline: names → layout/render (OpenSCAD) → plate packing (3MF with text layer range on tool 2, wipe tower position) → slicing (M600 at the tower or the nozzle wiper, T lines stripped, footer merged to one tool)
 - `backend/booth/` – booth backend: `service.py` (previews, orders, payment, plate scheduler, time model), `db.py` (SQLite), `printer.py` (simulator + PrusaLink), `server.py` (FastAPI), `static/staff/` (staff page for the phone)
 - `frontend/` – kiosk app (Vite + React + TS), built to `frontend/dist/`, served by the backend at `/kiosk/`
 - `config/booth.json` – booth settings (colours, prices, plate size/wait, PIN, printer)
@@ -39,7 +39,9 @@ printer (sim/PrusaLink, connection test), print setup (only with an empty queue)
 picks changes up the next time it is on its start screen. `--config <file>` / `BOOTH_CONFIG` selects another booth.json.
 Kiosk API: `GET /api/config`, `GET /api/status`, `POST /api/fit`, `POST /api/preview`, `POST /api/orders`.
 For the real printer set `"printer": {"type": "prusalink", "host": ..., "api_key": ...}` – a USB stick must be
-in the printer (upload target), the PrusaLink client is not yet tested on hardware.
+in the printer (upload target). The PrusaLink client is tested on the real Core One+ (digest auth with user `maker` +
+password); results and timings: `docs/hardware-test-2026-11-10.md`. Note: the printer starts a new upload even in
+FINISHED – "Platte leer" on the staff page is the only guard against printing onto a full bed.
 
 Staff page "📊 Tag": today's numbers (orders, printed, money, colours), CSV export, backups
 (hourly, `data/backups/`), "Tag abschließen" at the end of the day, clock + shutdown on the Pi.

@@ -85,6 +85,10 @@ shapes/
   operations (stats, close day, CSV, backups), forecast-based pickup times, day simulator,
   Pi install (`deploy/pi/`) + self-check. Simulation: ~18 tags per printer hour.
 - After a plate the printer holds the text colour: staff reload the base colour before the next plate.
+- 2026-11-10: first real prints (Core One+ Gen 2, 0.25 nozzle, PETG) – PrusaLink client works, wipe tower
+  for the colour change (two-tool profile trick), warm bed between plates, 3 base layers (0.5 mm) look good,
+  5-tag plate 34.7 min. Wiper colour change (Core One+ nozzle wiper) prepared, test 2026-11-11.
+  Details + open items: `hardware-test-2026-11-10.md`. Biggest lever for capacity: 0.4 nozzle (≈2.6× faster).
 
 ## Phases
 
@@ -114,4 +118,6 @@ kiosk hardening. (Needs Node on the dev machine.)
 - Pickup number format (counter per day?).
 - Check on the Pi: OpenSCAD render time for text (2021.01 CGAL is slow; a newer
   build with Manifold may be needed).
-- Core One PrusaLink API key / network setup at the booth.
+- Core One PrusaLink password / network setup at the booth (booth.json host is still 192.168.10.2).
+- Booth nozzle 0.4 vs 0.25, wiper vs tower, calibration prompt, prep time between plates, PETG temperature
+  (see `hardware-test-2026-11-10.md`).

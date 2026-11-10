@@ -19,10 +19,29 @@ OUT = Path(__file__).resolve().parents[1] / "slicer" / "profiles" / "coreone_040
 
 # Booth overrides on top of the system presets.
 OVERRIDES = {
-    "binary_gcode": "0",          # plain G-code: we post-process it (M600 insert)
+    "binary_gcode": "0",          # plain G-code: we post-process it (T lines, checks)
     "gcode_label_objects": "firmware",
     "complete_objects": "0",
+    # Colour change with a wipe tower: PrusaSlicer builds a tower only for a
+    # tool change, so the printer is set up as two tools on one nozzle (XL-style
+    # multi-tool, no MMU ramming/parking). The plate 3MF puts the text on tool 2;
+    # the tool change is a plain M600 at the tower, then the tower purges the
+    # new colour. slicer.py strips the T0/T1 lines PrusaSlicer always emits.
+    # Tower position comes from the 3MF (PrusaSlicer 2.9 ignores wipe_tower_x/y).
+    "single_extruder_multi_material": "0",
+    "toolchange_gcode": "{if previous_extruder >= 0}M600 ; booth: text colour{endif}",
+    "wipe_tower": "1",
+    "wipe_tower_width": "12",
+    "wipe_tower_brim_width": "2",
+    "wiping_volumes_use_custom_matrix": "1",
+    "wiping_volumes_matrix": "0,15,15,0",           # mm3 purged on the tower
+    "filament_minimal_purge_on_wipe_tower": "10",
+    "filament_multitool_ramming": "0",
+    "ooze_prevention": "0",
 }
+# Keep the bed hot after a plate: the next plate starts without the long
+# bed heat-up (firmware safety timer still switches heaters off when idle).
+END_GCODE_DROP = r"M140 S0 ; turn off heatbed\n"
 
 
 def parse(path: Path) -> dict[str, dict[str, str]]:
@@ -62,6 +81,10 @@ def main():
     for kind, name in (("printer", a.printer), ("print", a.print_), ("filament", a.filament)):
         cfg.update(resolve(s, kind, name))
     cfg.update(OVERRIDES)
+    cfg["nozzle_diameter"] = f"{cfg['nozzle_diameter']},{cfg['nozzle_diameter']}"   # two tools, same nozzle
+    if END_GCODE_DROP not in cfg["end_gcode"]:
+        raise SystemExit("end_gcode: 'M140 S0 ; turn off heatbed' not found - check the preset")
+    cfg["end_gcode"] = cfg["end_gcode"].replace(END_GCODE_DROP, "")
     # PrusaSlicer checks these against the preset names used in the G-code header
     cfg["printer_settings_id"] = a.printer
     cfg["print_settings_id"] = a.print_
