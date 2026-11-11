@@ -13,29 +13,34 @@ from .setup import PrintSetup
 
 PRUSA_SLICER = os.environ.get("PRUSA_SLICER") or shutil.which("prusa-slicer") or "prusa-slicer"
 COLOR_CHANGE = "M600 ; booth: text colour"
+COLOR_CHANGE_RE = r"^M600(?: [^;\n]*?)? ; booth: text colour$"   # wiper variant carries a park position
 
 # Colour change on the Core One+ (Gen 2) nozzle wiper instead of a wipe tower.
 # Positions from the firmware (nozzle_cleaner_lite.cpp, v7.0.0): touchpoint
-# X206.5 Y-15, pad along X from 196.5 to 166.5 around Y-15. Purge left of the
-# pad (falls down in front of the bed), standard retract, one pass over the pad
-# towards the touchpoint (stops 10 mm short of it), lift. The pass dips below
-# Z=0, so the software endstops are off for it (M211). wiper_z depends on the
+# X206.5 Y-15, pad along X from 196.5 to 166.5 around Y-15. M600 X/Y only sets
+# where the head waits for unload + swap (front middle, X110). Once new filament is
+# inserted, firmware 7.0.0 always moves to its load position X202 Y-13 (just right
+# of the pad) and loads + purges there - hard-coded (pause.cpp await_filament_process,
+# ParkPosition::load), no parameter. Afterwards it returns to X110, where we purge
+# again at pad height (drags the firmware strand along), fast retract, and one pass into the pad
+# (shears the purge off at its edge, stops 10 mm short of the touchpoint), lift.
+# Purge and pass dip below Z=0, so the software endstops are off (M211). wiper_z depends on the
 # sheet (Z=0 is the sheet surface): measured -0.3 touchpoint -> -0.6 wipe.
 WIPER_TOOLCHANGE = (
     "{{if previous_extruder >= 0}}\n"
     "; booth: colour change at the nozzle wiper\n"
     "G1 Z{{layer_z + 3}} F720 ; lift off the tags\n"
-    "G1 X160 Y-15 F12000 ; left of the wiper pad\n"
-    + COLOR_CHANGE + "\n"
-    "G1 E6 F200 ; purge (falls in front of the bed)\n"
-    "G1 E-0.8 F2700 ; retract\n"
-    "G1 X168 F6000 ; over the pad start\n"
-    "M211 S0 ; pass dips below Z=0\n"
-    "G1 Z{wiper_z} F6000 ; into the pad\n"
-    "G1 X195 F8000 ; one pass\n"
+    "G1 X110 Y-15 F12000 ; purge spot, front middle, well left of the wiper pad\n"
+    "; swap here; the firmware still loads + purges at its own load position X202 Y-13\n"
+    "M600 X110 Y-15" + COLOR_CHANGE[4:] + "\n"
+    "M211 S0 ; purge and pass dip below Z=0\n"
+    "G1 Z{wiper_z} F720 ; down to pad height (firmware has returned to the purge spot)\n"
+    "G1 E24 F200 ; purge (hangs in front of the bed)\n"
+    "G1 E-1.5 F3600 ; fast retract right after the purge: helps shear it off\n"
+    "G1 X195 F8000 ; into the pad: shears the purge off at its edge, one pass\n"
     "G1 Z{{layer_z + 3}} F720 ; up\n"
     "M211 S1\n"
-    "G1 E0.8 F2700 ; undo our retract: the slicer retracts/deretracts again around the travel\n"
+    "G1 E1.5 F2700 ; undo our retract: the slicer retracts/deretracts again around the travel\n"
     "{{endif}}"
 )
 
@@ -74,7 +79,7 @@ def finish_gcode(gcode: str, base_h: float) -> tuple[str, float]:
     Returns (gcode, Z of that layer)."""
     gcode = re.sub(r"^T\d+[ \t]*(;.*)?\n", "", gcode, flags=re.M)
     gcode = single_tool_metadata(gcode)
-    hits = [m.start() for m in re.finditer(rf"^{re.escape(COLOR_CHANGE)}$", gcode, re.M)]
+    hits = [m.start() for m in re.finditer(COLOR_CHANGE_RE, gcode, re.M)]
     if len(hits) != 1:
         raise SliceError(f"expected one colour change, found {len(hits)}")
     zs = re.findall(r"^;LAYER_CHANGE\n;Z:([\d.]+)$", gcode[:hits[0]], re.M)

@@ -114,20 +114,22 @@ def test_plate_text_layers(tmp_path, setup_name):
     res = slice_plate([tmp_path / "plate.3mf"], tmp_path / "plate.gcode", setup)
     assert res.color_change_z == pytest.approx(setup.base_h + setup.text_layer_h)
     lines = res.gcode.read_text().splitlines()
-    assert [ln for ln in lines if ln.startswith("M600")] == ["M600 ; booth: text colour"]
+    m600 = [ln for ln in lines if ln.startswith("M600")]
+    assert m600 == ["M600 X110 Y-15 ; booth: text colour" if setup.color_change == "wiper" else "M600 ; booth: text colour"]
     assert not [ln for ln in lines if ln.strip() in ("T0", "T1")]
-    i = lines.index("M600 ; booth: text colour")
+    i = lines.index(m600[0])
     if setup.color_change == "tower":
         assert ";TYPE:Wipe tower" in lines[i - 30:i]            # colour change happens at the tower
     else:
         assert not [ln for ln in lines if ln == ";TYPE:Wipe tower"]
-        end = next(j for j in range(i, len(lines)) if lines[j].startswith("G1 E0.8 F2700 ; undo our retract"))
+        end = next(j for j in range(i, len(lines)) if lines[j].startswith("G1 E1.5 F2700 ; undo our retract"))
         block = lines[i - 3:end + 1]
-        assert "G1 X160 Y-15 F12000 ; left of the wiper pad" in block
+        assert any(ln.startswith("G1 X110 Y-15 F12000") for ln in block)
+        assert any(ln.startswith("G1 E24 F200") for ln in block)
         assert any(ln.startswith(f"G1 Z{setup.wiper_z:g}") for ln in block)
         at = [next(k for k, ln in enumerate(block) if ln.startswith(c)) for c in ("M211 S0", f"G1 Z{setup.wiper_z:g}", "M211 S1")]
         assert at == sorted(at)                                 # endstops off only around the dip
         # extrusion inside the block is purge only: retract and its undo cancel out
         e = [float(m[1]) for ln in block if (m := re.match(r"G1 E(-?[\d.]+)", ln))]
-        assert sum(e) == pytest.approx(6.0)
+        assert sum(e) == pytest.approx(24.0)
     assert not [ln for ln in lines if re.match(r"; (filament used \[\w+\]|nozzle_diameter) = .*,", ln)]  # one tool

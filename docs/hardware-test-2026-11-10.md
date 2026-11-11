@@ -63,12 +63,44 @@ From the firmware source (Prusa-Firmware-Buddy v7.0.0,
   `M211 S1` around it (M211 is in the firmware).
 - Excess filament can fall down in front of the bed, left of the wiper.
 
-Wiper colour change (`slicer.WIPER_TOOLCHANGE`): lift Z+3 → X160 Y-15 (left of the
-pad) → M600 → purge 6 mm (~15 mm³) → retract 0.8 → X168 → `M211 S0` → Z `wiper_z` →
-one pass to X195 (stops 10 mm before the touchpoint) → lift → `M211 S1` → undo the
+Wiper colour change (`slicer.WIPER_TOOLCHANGE`): lift Z+3 → X110 Y-15 (front middle)
+→ `M600 X110 Y-15` (unload + swap there; the firmware then loads + purges at its fixed
+load position X202 Y-13 and returns) → `M211 S0`
+→ Z `wiper_z` → purge 24 mm → fast retract 1.5 mm @ 60 mm/s → one pass X110→X195 at pad height (shears the
+purge off at the pad edge) (stops 10 mm before the touchpoint) → lift → `M211 S1` → undo the
 retract (the slicer retracts/deretracts again around the travel back).
 Risk for the first run: mid-print the mesh bed levelling is active and extrapolates
 a small correction to Y-15 → watch the first pass, adjust `wiper_z` if needed.
+
+### Wiper run 2026-11-11 (5 tags, `nozzle025petg_b3w`, cold bed)
+- 40.1 min total, of which 15.2 min waiting at the M600 → **~27 min with a 2.3 min swap**
+  (tower version: 34.7 min). Prep 8.1 min (bed from 17 °C), base 13.1 min, wipe + text
+  ~2.5 min, end G-code ~1.2 min.
+- Wipe pass at `wiper_z` -0.6 touched the pad fine; text crisp; tags stuck.
+- Issues: 6 mm purge too little (filament still hung on the nozzle); purge at X160 landed
+  next to the pad and stuck to the nozzle. Fix: purge position moved to X110 Y-15, purge
+  4× (24 mm).
+- 1-tag check (EMMA, warm bed): 11.8 min (prep 5.3, base 2.4, swap 2.3, purge+wipe+text
+  ~1.0, end 1.2). Purge + wipe worked, but the firmware's own M600 load purge still
+  landed on the pad (it purges at the M600 park position, not at our X110). Fix: park via
+  `M600 X110 Y-15`, our purge moved to X146 at `wiper_z` so the pass shears it off.
+- 2nd 1-tag check: 12.1 min. M600 park position works (firmware purge went to X110);
+  purge at pad height + shear worked, no contact at Z -0.6 at X146. Changed: park at
+  X146 too (all purge in one spot), retract after our purge 0.8 → 1.5 mm at 60 mm/s
+  (the old one wasn't visible).
+- 3rd 1-tag check (park X146): firmware purge seemed to land on the pad again. Firmware
+  7.0.0 source (non-INDX Core One): M600 default park = X202 Y-13 (`X_MAX_POS-50`,
+  `Y_MIN_POS+6`, over the pad), park Z 60, load purge happens at the park position
+  (waste-bin purge only on INDX/iX). X146 is likely too close given the 6 cm fall →
+  both purges moved to X110, move into the pad at `wiper_z` from there.
+- 4th 1-tag check (park X110): unload + swap at X110 as intended, but after inserting the
+  filament the head moved to X202 Y-13 and purged there. Firmware 7.0.0
+  `Pause::await_filament_process` always parks at `ParkPosition::load` (= X202 Y-13 on the
+  Core One) before loading; not configurable. Every firmware load (M600, M701, autoload)
+  purges there. **Decision: accept it** (option 1). The blob lands just right of the pad,
+  outside our pass (X110→X195); leftover purge is handled by hand, no staff step.
+  Result: the strand was dragged off and fell down in front of the bed. A custom unload/M601/manual-load sequence was rejected as too fragile
+  (autoload, filament sensor) for the booth.
 
 ## Timing (5 tags: EMMA, OMA, LEON, MAXIMILIAN, SOPHIE)
 | | 1 tag, 7 base layers | 5 tags, 7 base layers, cold bed | **5 tags, 3 base layers, warm bed** |
