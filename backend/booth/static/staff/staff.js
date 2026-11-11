@@ -16,7 +16,7 @@ const PRINTER = {
 };
 const TAG_STATUS = { held: "wartet auf Zahlung", queued: "in Warteschlange", plated: "wird gedruckt",
   printed: "fertig", cancelled: "storniert" };
-const SHAPE = { stadium: "Anhänger", star: "Stern", tree: "Baum", bell: "Glocke" };
+const SHAPE = { stadium: "Anhänger", wave: "Welle", star: "Stern", tree: "Baum", bell: "Glocke" };
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

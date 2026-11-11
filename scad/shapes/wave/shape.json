@@ -1,0 +1,13 @@
+{
+  "id": "wave",
+  "label": {
+    "de": "Welle",
+    "en": "Wave"
+  },
+  "order": 15,
+  "mode": "grow",
+  "text": {
+    "size": 10,
+    "max_w": 85
+  }
+}

@@ -140,12 +140,29 @@ a small correction to Y-15 → watch the first pass, adjust `wiper_z` if needed.
 | `nozzle025petg_b3w` | same | 0.5 mm (3 layers) | wiper |
 `active` is still `nozzle040s` (PLA, 0.4).
 
+## Nozzle decision and capacity (2026-11-11)
+- 0.4 test plate (`nozzle040petg_w`, same 5 names, base 0.6 mm): 22.1 min with a cold bed
+  (prep ~8.5, base ~5.5, swap wait 5.2, text + end ~2). **Text not nice enough → booth
+  stays on the 0.25.** The 0.4 setup and `coreone_040_petg.ini` stay as a fallback only.
+- Time model: real ≈ fixed prep (`plate.prep_min`, 6.5 min: heat-up, MBL, end G-code)
+  + slicer estimate × `real_factor` + wait at the colour change. The forecast adds the prep;
+  `real_factor` now learns from printing time only (prep and colour-change wait removed).
+- Day simulation (6 h open, queue limit 30, realistic mix of names/shapes), 0.25 nozzle:
+  | | scale 0.75 | **scale 0.6** | 0.4 nozzle, scale 0.75 |
+  |---|---|---|---|
+  | 70 kids: turned away / tags | 20 / 71 | **14 / 81** | 8 / 95 |
+  | median wait | ~2 h 55 | **~2 h 05** | ~1 h 35 |
+  | 150 kids: tags | 75 | **91** | 106 |
+  Queue limit 15 at scale 0.6 printed fewer tags (69, emptier plates) and still ~1 h 40
+  wait → keep 30.
+- Booth setup `nozzle025petg_b3w` now at **scale 0.6** (20 % smaller; stadium ~32 × 12 mm,
+  6 mm text). Some long names no longer fit bell / Pacifico (kiosk offers other shapes).
+- New shape **wave** ("Welle"): band with a sine edge (amp 2.2, period 34 design units).
+
 ## Open
-1. Test print with `nozzle025petg_b3w` (wiper) – watch the first wipe pass.
-2. Decide the booth nozzle: 0.4 (≈2.6× faster) vs 0.25; then a 0.4 PETG profile + setup
-   and set `active`.
-3. Fix the calibration prompt on the printer.
-4. Shorter prep between booth plates (skip/limit MBL? Prusa start G-code).
-5. PETG temperature per setup (stringing).
-6. `config/booth.json` still points at the booth address `192.168.10.2`; set the
+1. Test plate at scale 0.6 on the 0.25 (wave + long names): size and crispness OK?
+2. Fix the calibration prompt on the printer (done by the user 2026-11-11 – verify).
+3. Shorter prep between booth plates (skip/limit MBL? Prusa start G-code).
+4. PETG temperature per setup (stringing).
+5. `config/booth.json` still points at the booth address `192.168.10.2`; set the
    printer password there (not in git) for the booth.

@@ -78,7 +78,7 @@ def test_pack_stays_on_bed():
 def test_shapes_and_layout(setup_name):
     setup = load_setup(setup_name)
     fonts, shapes = load_fonts(), load_shapes()
-    assert list(shapes) == ["stadium", "star", "tree", "bell"]
+    assert list(shapes) == ["stadium", "wave", "star", "tree", "bell"]
     for s in shapes.values():
         for name in ["A", "MAXIMILIAN", "ÄÖÜ-ß 1234AB"]:
             lay = layout(name, fonts["baloo"], s, setup)
