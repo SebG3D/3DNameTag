@@ -60,6 +60,7 @@ function renderSettings() {
       ${field("Max. Anhänger pro Platte", num("plate.max_tags", d.plate.max_tags, 'min="1" max="40"'), "was nicht auf die Platte passt, kommt auf die nächste")}
       ${field("Spätestens starten nach (min)", num("plate.max_wait_min", d.plate.max_wait_min, 'min="0" max="240"'), "auch wenn die Platte nicht voll ist")}
       ${field("Wechselzeit Betreuer (min)", num("plate.change_min", d.plate.change_min, 'min="0" max="60" step="0.5"'), "Platte leeren + Filament, für die Zeitschätzung")}
+      ${field("Vorbereitung Drucker (min)", num("plate.prep_min", d.plate.prep_min, 'min="0" max="30" step="0.5"'), "Aufheizen + Vermessen + Ende je Platte, für die Zeitschätzung")}
     </div>
   </section>
 

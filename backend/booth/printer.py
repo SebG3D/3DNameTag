@@ -53,15 +53,17 @@ class SimPrinter(Printer):
     line's position in the file (good enough as a time fraction)."""
     kind = "sim"
 
-    def __init__(self, speed: float = 60.0, auto_resume_s: float | None = None, clock=time.monotonic):
+    def __init__(self, speed: float = 60.0, auto_resume_s: float | None = None, clock=time.monotonic,
+                 prep_s: float = 0.0):
         self.speed, self.auto_resume_s, self.clock = speed, auto_resume_s, clock
+        self.prep_s = prep_s                  # heat-up/levelling before the estimated part (progress stays 0)
         self.job = None
 
     def start(self, gcode: Path, est_s: int) -> None:
         text = gcode.read_text()
         at = text.find("\nM600")
         frac = at / len(text) if at > 0 else None
-        self.job = {"est": max(1, est_s), "done_s": 0.0, "last": self.clock(), "cc_frac": frac,
+        self.job = {"est": max(1, est_s), "done_s": -self.prep_s, "last": self.clock(), "cc_frac": frac,
                     "waiting_since": None, "state": "printing", "name": gcode.name}
 
     def resume(self) -> None:
@@ -94,8 +96,8 @@ class SimPrinter(Printer):
             self.resume()
         j["last"] = now
         msg = "Filamentwechsel (Sim)" if j["state"] == "attention" else ""
-        return PrinterStatus(j["state"], 100.0 * j["done_s"] / j["est"],
-                             int(j["est"] - j["done_s"]), msg)
+        done = max(0.0, j["done_s"])
+        return PrinterStatus(j["state"], 100.0 * done / j["est"], int(j["est"] - done), msg)
 
 
 _PL_STATES = {"IDLE": "idle", "READY": "idle", "PRINTING": "printing", "PAUSED": "paused",

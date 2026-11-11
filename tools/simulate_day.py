@@ -30,6 +30,8 @@ from booth.config import load_config                 # noqa: E402
 from booth.printer import SimPrinter                 # noqa: E402
 from booth.service import Booth, BoothError          # noqa: E402
 
+SHAPE_WEIGHT = {"stadium": 4, "wave": 3, "star": 3, "tree": 2, "bell": 2}   # how often kids pick a shape
+
 NAMES = ("EMMA MIA SOFIA HANNAH LINA ELLA CLARA LEA MARIE LENA ANNA LUISA FINN NOAH ELIAS PAUL "
          "LEON BEN FELIX LUKAS MAX JONAS THEO HENRY OMA OPA MAMA PAPA JOSEFINE MAXIMILIAN "
          "ZOE JÜRGEN SÖREN GRETA-MARIE ANTON-LUCA KARL").split()
@@ -76,7 +78,7 @@ def main() -> int:
     h, m = map(int, a.start.split(":"))
     day0 = time.mktime(time.strptime(time.strftime("%Y-%m-%d") + f" {h:02d}:{m:02d}", "%Y-%m-%d %H:%M"))
     clock = Clock(day0)
-    printer = SimPrinter(speed=1.0, clock=clock)
+    printer = SimPrinter(speed=1.0, clock=clock, prep_s=cfg.plate_prep_min * 60)   # as measured on the Core One
     booth = Booth(cfg, printer=printer, setup_name=a.setup, clock=clock)
     fonts, shapes = list(booth.fonts), list(booth.shapes)
     colors = [c["id"] for c in cfg.text_colors]
@@ -103,8 +105,12 @@ def main() -> int:
         items = []
         for _ in range(n):
             name, font = rng.choice(NAMES), weighted(rng, dict(zip(fonts, (5, 2, 4, 2, 3, 2))))
-            shape = weighted(rng, dict(zip(shapes, (4, 3, 2, 2))))
+            shape = weighted(rng, {s: SHAPE_WEIGHT.get(s, 2) for s in shapes})
             fit = booth.fit(name, font)
+            if not any(fit.values()):                           # fits no shape: kid picks a plainer font
+                stats["fit_fail"] += 1
+                font = "baloo"
+                fit = booth.fit(name, font)
             if not fit[shape]:
                 stats["fit_fail"] += 1
                 shape = next(s for s in shapes if fit[s])          # kid picks another shape

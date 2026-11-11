@@ -101,6 +101,8 @@ class Booth:
         self.previews: dict[str, Preview] = {}
         # plate id -> last seen printer progress (persisted: survives a restart)
         self._progress: dict[int, float] = {int(k): v for k, v in self.db.get_state("plate_progress", {}).items()}
+        self._cc_since: dict[int, float] = {}       # plate -> when it started waiting (colour change / pause)
+        self._cc_wait: dict[int, float] = {}        # plate -> seconds spent waiting (kept out of real_factor)
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="render")
         self.lock = threading.RLock()            # scheduler vs. staff actions
         self.last_status = PrinterStatus("offline", message="not polled yet")
@@ -272,7 +274,8 @@ class Booth:
             st = self.last_status
             remain = st.remaining_s if st.remaining_s is not None and plate["status"] in ("printing", "color_change") \
                 else (plate["est_s"] or 0) * (0 if plate["status"] == "printed" else 1)
-            t += remain * self.real_factor + c.plate_change_min * 60
+            prep = c.plate_prep_min * 60 if plate["status"] == "printing" and self._progress.get(plate["id"], 0) < 1 else 0
+            t += remain * self.real_factor + prep + c.plate_change_min * 60
         groups: dict[str, list[dict]] = {}
         waiting = self.db.q("SELECT id, text_color, area_mm2, COALESCE(queued_at, ?) AS queued_at FROM tags "
                             "WHERE status IN ('queued','held') ORDER BY COALESCE(queued_at, ?), id", now, now)
@@ -289,7 +292,8 @@ class Booth:
             batch, groups[col] = groups[col][:c.plate_max_tags], groups[col][c.plate_max_tags:]
             if not groups[col]:
                 del groups[col]
-            dur = (self.plate_overhead_s + sum(self.tag_estimate_s(x["area_mm2"]) for x in batch)) * self.real_factor
+            dur = (self.plate_overhead_s + sum(self.tag_estimate_s(x["area_mm2"]) for x in batch)) * self.real_factor \
+                + c.plate_prep_min * 60
             t = start + dur
             for x in batch:
                 done[x["id"]] = t
@@ -359,7 +363,10 @@ class Booth:
         if st.state in ("attention", "paused"):
             if status != "color_change":
                 self.db.plate_status(pid, "color_change")
+            self._cc_since.setdefault(pid, self.clock())
         elif st.state == "printing" or st.state == "busy":
+            if pid in self._cc_since:
+                self._cc_wait[pid] = self._cc_wait.get(pid, 0.0) + self.clock() - self._cc_since.pop(pid)
             if status != "printing":
                 self.db.plate_status(pid, "printing")
         elif st.state == "finished":
@@ -367,7 +374,9 @@ class Booth:
             self.db.plate_status(pid, "printed", finished=now)
             self._learn_eta(pid, now)
             if plate["started"] and plate["est_s"]:
-                f = (now - plate["started"]) / plate["est_s"]
+                # printing time only: without the fixed prep and the wait at the colour change
+                printed = now - plate["started"] - self.cfg.plate_prep_min * 60 - self._cc_wait.pop(pid, 0.0)
+                f = printed / plate["est_s"]
                 if 0.8 < f < 3:
                     self.real_factor = round(0.7 * self.real_factor + 0.3 * f, 3)
                     self.db.set_state("real_factor", self.real_factor)

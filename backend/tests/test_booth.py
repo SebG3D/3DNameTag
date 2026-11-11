@@ -51,7 +51,7 @@ def run_until(booth, clock, cond, step=30, limit=20000):
 def test_preview_and_fit(env):
     booth, _, _ = env
     fit = booth.fit("emma", "baloo")
-    assert fit == {"stadium": True, "star": True, "tree": True, "bell": True}
+    assert fit == {"stadium": True, "wave": True, "star": True, "tree": True, "bell": True}
     p = booth.preview("emma", "baloo", "star")
     assert p.name == "EMMA" and p.stl.exists() and p.area_mm2 > 500
     assert p.outline.startswith("M") and p.text.startswith("M")
@@ -95,6 +95,31 @@ def test_order_payment_and_plate_flow(env):
 
     ov = booth.staff_overview()
     assert ov["orders"][0]["number"] == 1 and not ov["orders"][0]["ready"]
+
+
+def test_prep_and_colour_wait_kept_out_of_real_factor(env):
+    """Real time = fixed printer prep + slicer estimate * real_factor + wait at the M600.
+    The forecast adds the prep; the learned factor only sees the printing part."""
+    booth, printer, clock = env
+    printer.prep_s = booth.cfg.plate_prep_min * 60
+    o = order(booth, ("emma", "baloo", "stadium", "white"))
+    booth.staff_paid(o["order_id"])
+    tag = booth.db.order(o["order_id"])["tags"][0]
+    eta = booth.forecast()[tag["id"]]
+    assert eta >= booth.cfg.plate_prep_min * 60          # prep is part of the ETA
+    booth.staff_start_now("white")
+    booth.tick()
+    plate = booth.db.active_plate()
+    f0 = booth.real_factor
+    run_until(booth, clock, lambda: booth.db.plate(plate["id"])["status"] == "color_change", step=2)
+    clock.advance(15 * 60)                               # staff takes 15 min for the swap
+    booth.tick()
+    printer.resume()
+    run_until(booth, clock, lambda: booth.db.plate(plate["id"])["status"] == "printed", step=2)
+    # sim prints exactly est_s after the prep -> f ~ 1.0. Without separating prep and the
+    # 15 min wait, f would be > 3 and ignored, so the factor would stay at f0.
+    assert booth.real_factor < f0 - 0.03
+    assert booth.real_factor == pytest.approx(0.7 * f0 + 0.3 * 1.0, abs=0.02)
 
 
 def test_colors_grouped_full_plate_starts(env):
@@ -147,7 +172,7 @@ def test_api(tmp_path):
     booth = Booth(load_config(data_dir=tmp_path), printer=SimPrinter(), setup_name="nozzle040s")
     with TestClient(create_app(booth, run_loop=False)) as c:
         cfg = c.get("/api/config").json()
-        assert [s["id"] for s in cfg["shapes"]] == ["stadium", "star", "tree", "bell"]
+        assert [s["id"] for s in cfg["shapes"]] == ["stadium", "wave", "star", "tree", "bell"]
         assert c.get(cfg["fonts"][0]["url"]).status_code == 200
         icon = c.get("/api/shapes/tree/icon").json()
         assert icon["outline"].startswith("M") and icon["text"].startswith("M")

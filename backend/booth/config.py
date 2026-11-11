@@ -34,6 +34,8 @@ class BoothConfig:
     printer: dict
     disabled_fonts: list[str] = field(default_factory=list)
     disabled_shapes: list[str] = field(default_factory=list)
+    plate_prep_min: float = 6.5      # printer time per plate outside the slicer estimate
+                                     # (heat-up, mesh levelling, end G-code; Core One, warm bed)
     kiosk_idle_s: int = 90
     kiosk_sound: bool = True
     print_setup: str | None = None
@@ -118,6 +120,7 @@ def parse_config(c: dict) -> BoothConfig:
             plate_max_tags=_int(pl, "max_tags", 1, 40),
             plate_max_wait_min=_num(pl, "max_wait_min", 0, 240),
             plate_change_min=_num(pl, "change_min", 0, 60),
+            plate_prep_min=_num({"prep_min": pl.get("prep_min", 6.5)}, "prep_min", 0, 30),
             staff_pin=pin,
             printer=p,
             disabled_fonts=[str(x) for x in c.get("disabled_fonts", [])],
@@ -142,7 +145,7 @@ def config_dict(cfg: BoothConfig) -> dict:
         "max_tags_per_order": cfg.max_tags_per_order,
         "queue_limit": cfg.queue_limit,
         "plate": {"max_tags": cfg.plate_max_tags, "max_wait_min": cfg.plate_max_wait_min,
-                  "change_min": cfg.plate_change_min},
+                  "change_min": cfg.plate_change_min, "prep_min": cfg.plate_prep_min},
         "kiosk": {"idle_s": cfg.kiosk_idle_s, "sound": cfg.kiosk_sound},
         "disabled_fonts": cfg.disabled_fonts,
         "disabled_shapes": cfg.disabled_shapes,
