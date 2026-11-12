@@ -174,8 +174,15 @@ a small correction to Y-15 → watch the first pass, adjust `wiper_z` if needed.
 - Plate `spacing_test` (5 tags): 22.8 min to the M600, swap 6.5 min, text 3.5 min,
   **33 min** total. Spacing, titan and text all nice, no shift.
 
+- Purge spot X110 → **X140** (26.5 mm before the pad) and text at **240 °C** (setup
+  `text_temp_delta` −10: `M104` before the M600 so the firmware loads with it, `M109` after):
+  purge wiped off cleanly, text sticks. Plate `purge140_test` (5 tags, cold bed): prep 7.3 min,
+  base 11.8, swap 2.5, text 2.7 → **24 min**.
+- **Skipping MBL on successive plates rejected:** without probing the nozzle crashed into
+  the bed (only Z homing at the sheet edge, mesh from the previous plate not applied). It would
+  only have saved ~1.5–2 min (prep 5 min vs 6.5–7.4).
+
 ## Open
-1. Shorter prep between booth plates (skip/limit MBL? Prusa start G-code).
-2. PETG temperature per setup (stringing).
-3. `config/booth.json` still points at the booth address `192.168.10.2`; set the
+1. Shorter prep between booth plates: MBL stays; little else left to gain.
+2. `config/booth.json` still points at the booth address `192.168.10.2`; set the
    printer password there (not in git) for the booth.

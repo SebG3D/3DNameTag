@@ -7,7 +7,7 @@
     "nozzle025":  {"profile": "coreone_025.ini", "scale": 0.75, "min_text_size": 4.5, "base_h": 1.1, "text_h": 0.3, "text_layer_h": 0.15, "text_overlap": 0.15, "hole_d": 4.0, "text_grow": 0},
     "nozzle025petg": {"profile": "coreone_025_petg.ini", "scale": 0.75, "min_text_size": 4.5, "base_h": 1.1, "text_h": 0.3, "text_layer_h": 0.15, "text_overlap": 0.15, "hole_d": 4.0, "text_grow": 0},
     "nozzle025petg_b3": {"profile": "coreone_025_petg.ini", "scale": 0.75, "min_text_size": 4.5, "base_h": 0.5, "text_h": 0.3, "text_layer_h": 0.15, "text_overlap": 0.15, "hole_d": 4.0, "text_grow": 0},
-    "nozzle025petg_b3w": {"profile": "coreone_025_petg.ini", "scale": 0.6, "min_text_size": 4.5, "base_h": 0.5, "text_h": 0.15, "text_layer_h": 0.15, "text_overlap": 0.15, "hole_d": 4.0, "text_grow": 0, "color_change": "wiper", "wiper_z": -0.6},
+    "nozzle025petg_b3w": {"profile": "coreone_025_petg.ini", "scale": 0.6, "min_text_size": 4.5, "base_h": 0.5, "text_h": 0.15, "text_layer_h": 0.15, "text_overlap": 0.15, "hole_d": 4.0, "text_grow": 0, "color_change": "wiper", "wiper_z": -0.6, "text_temp_delta": -10},
     "nozzle040petg_w": {"profile": "coreone_040_petg.ini", "scale": 0.75, "min_text_size": 4.5, "base_h": 0.6, "text_h": 0.3, "text_layer_h": 0.15, "text_overlap": 0.15, "hole_d": 4.0, "text_grow": 0, "color_change": "wiper", "wiper_z": -0.6}
   }
 }

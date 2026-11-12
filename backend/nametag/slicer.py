@@ -18,10 +18,10 @@ COLOR_CHANGE_RE = r"^M600(?: [^;\n]*?)? ; booth: text colour$"   # wiper variant
 # Colour change on the Core One+ (Gen 2) nozzle wiper instead of a wipe tower.
 # Positions from the firmware (nozzle_cleaner_lite.cpp, v7.0.0): touchpoint
 # X206.5 Y-15, pad along X from 196.5 to 166.5 around Y-15. M600 X/Y only sets
-# where the head waits for unload + swap (front middle, X110). Once new filament is
+# where the head waits for unload + swap (X140, 26.5 mm left of the pad). Once new filament is
 # inserted, firmware 7.0.0 always moves to its load position X202 Y-13 (just right
 # of the pad) and loads + purges there - hard-coded (pause.cpp await_filament_process,
-# ParkPosition::load), no parameter. Afterwards it returns to X110, where we purge
+# ParkPosition::load), no parameter. Afterwards it returns to X140, where we purge
 # again at pad height (drags the firmware strand along), fast retract, and one pass into the pad
 # (shears the purge off at its edge, stops 10 mm short of the touchpoint), lift.
 # Purge and pass dip below Z=0, so the software endstops are off (M211). wiper_z depends on the
@@ -30,9 +30,11 @@ WIPER_TOOLCHANGE = (
     "{{if previous_extruder >= 0}}\n"
     "; booth: colour change at the nozzle wiper\n"
     "G1 Z{{layer_z + 3}} F720 ; lift off the tags\n"
-    "G1 X110 Y-15 F12000 ; purge spot, front middle, well left of the wiper pad\n"
+    "G1 X140 Y-15 F12000 ; purge spot, 26.5 mm left of the wiper pad\n"
+    "M104 S{text_temp} ; text temperature: set before the M600 so the firmware loads + resumes with it\n"
     "; swap here; the firmware still loads + purges at its own load position X202 Y-13\n"
-    "M600 X110 Y-15" + COLOR_CHANGE[4:] + "\n"
+    "M600 X140 Y-15" + COLOR_CHANGE[4:] + "\n"
+    "M109 S{text_temp} ; text temperature reached\n"
     "M211 S0 ; purge and pass dip below Z=0\n"
     "G1 Z{wiper_z} F720 ; down to pad height (firmware has returned to the purge spot)\n"
     "G1 E24 F200 ; purge (hangs in front of the bed)\n"
@@ -131,7 +133,7 @@ def slice_plate(models: list[Path], out: Path, setup: PrintSetup) -> PlateResult
     if setup.color_change == "wiper":
         extra = out.with_suffix(".wiper.ini")
         extra.write_text("wipe_tower = 0\n"
-                         "toolchange_gcode = " + WIPER_TOOLCHANGE.format(wiper_z=f"{setup.wiper_z:g}").replace("\n", "\\n") + "\n")
+                         "toolchange_gcode = " + WIPER_TOOLCHANGE.format(wiper_z=f"{setup.wiper_z:g}", text_temp=f"{setup.text_temp:g}").replace("\n", "\\n") + "\n")
         cmd += ["--load", str(extra)]
     cmd += ["--dont-arrange", "--export-gcode", "-o", str(raw), *map(str, models)]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)

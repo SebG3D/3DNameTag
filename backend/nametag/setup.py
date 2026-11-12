@@ -26,6 +26,7 @@ class PrintSetup:
     text_layer_h: float   # text layers (layer range in the plate 3MF)
     color_change: str = "tower"   # "tower": purge on a wipe tower | "wiper": purge + wipe on the Core One+ wiper
     wiper_z: float = -0.6         # wiper mode: Z of the wipe pass (pad top ~0.2 above the touchpoint, measured with G12)
+    text_temp: float = 0.0        # wiper mode: nozzle temperature for the text colour
 
     @property
     def text_layers(self) -> int:
@@ -63,7 +64,8 @@ def load_setup(name: str | None = None, config: Path = CONFIG) -> PrintSetup:
         raise ValueError(f"{name}: color_change must be 'tower' or 'wiper'")
     return PrintSetup(name, profile, e["scale"], e["min_text_size"], e["base_h"], e["text_h"],
                       e["text_overlap"], e["hole_d"], e["text_grow"], layer, first, text_layer,
-                      cc, float(e.get("wiper_z", -0.6)))
+                      cc, float(e.get("wiper_z", -0.6)),
+                      _ini_value(profile, "temperature") + float(e.get("text_temp_delta", 0)))
 
 
 def list_setups(config: Path = CONFIG) -> tuple[str, dict]:
