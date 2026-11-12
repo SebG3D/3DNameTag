@@ -66,7 +66,7 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
     @app.exception_handler(BoothError)
     async def booth_error(_, e: BoothError):
         return JSONResponse({"error": e.code, "message": str(e)}, status_code=409 if e.code in (
-            "queue_full", "bad_state", "tag_on_plate") else 400)
+            "queue_full", "bad_state", "tag_on_plate", "printer_busy") else 400)
 
     def staff(x_staff_token: str = Header(default=""), token: str = Query(default="")):
         t = x_staff_token or token
@@ -117,9 +117,10 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
         ("orders", "paid"): booth.staff_paid,
         ("orders", "cancel"): booth.staff_cancel_order,
         ("orders", "handed_out"): booth.staff_handed_out,
+        ("orders", "pickup"): booth.staff_pickup,
         ("tags", "cancel"): booth.staff_cancel_tag,
-        ("plates", "cleared"): booth.staff_plate_cleared,
-        ("plates", "cancel"): booth.staff_plate_cancel,
+        ("plates", "start"): booth.staff_plate_start,
+        ("plates", "delete"): booth.staff_plate_delete,
     }
 
     @app.post("/api/staff/{kind}/{item_id}/{action}", dependencies=[Depends(staff)])
@@ -128,16 +129,6 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
         if not fn:
             raise HTTPException(404)
         fn(item_id)
-        return {"ok": True}
-
-    @app.post("/api/staff/start_now/{color}", dependencies=[Depends(staff)])
-    def start_now(color: str):
-        booth.staff_start_now(color)
-        return {"ok": True}
-
-    @app.post("/api/staff/pause/{on}", dependencies=[Depends(staff)])
-    def pause(on: int):
-        booth.staff_pause(bool(on))
         return {"ok": True}
 
     @app.post("/api/staff/sim/resume", dependencies=[Depends(staff)])

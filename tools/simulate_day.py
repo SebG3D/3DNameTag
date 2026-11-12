@@ -8,11 +8,11 @@ fake clock) and report what kids and staff would experience.
   backend/.venv/bin/python tools/simulate_day.py --no-incidents --plate-max 6
 
 Simulated: kids arrive (busier in the afternoon), 1-3 tags per order,
-staff confirm payment after a few minutes (some never pay -> staff cancel),
-staff answer the colour change and clear the bed with realistic delays,
-kids pick up when ready. Incidents (unless --no-incidents): one print stopped
-on the printer (-> plate failed, queue paused, staff resume) and one backend
-restart in the middle of a plate.
+all tags print at once (money is taken at pickup), staff clear the bed and
+start the recommended plate, answer the colour change with realistic delays,
+kids pick up (and pay) when ready. Incidents (unless --no-incidents): one
+print stopped on the printer (-> plate failed, staff restart it) and one
+backend restart in the middle of a plate.
 
 Checks at the end (exit code 1 if one fails): every tag printed exactly once
 or cancelled, no tag lost, pickup numbers unique, nothing stuck.
@@ -125,11 +125,9 @@ def main() -> int:
             rejected.append((clock.t, e.code))
             note(f"order rejected: {e.code}")
             return
-        pays = r["needs_payment"] and rng.random() > 0.1
+        # unpaid tags print right away, the money is taken at pickup
         orders[r["order_id"]] = {"number": r["number"], "t": clock.t, "eta_s": r["eta_s"], "n": n,
-                                 "pays_at": clock.t + rng.uniform(60, 600) if pays else None,
-                                 "cancel_at": clock.t + 900 if r["needs_payment"] and not pays else None,
-                                 "ready_t": None, "picked": False}
+                                 "pays_at": None, "cancel_at": None, "ready_t": None, "picked": False}
 
     t_wall = time.perf_counter()
     ai = 0
@@ -161,15 +159,6 @@ def main() -> int:
                 for t in booth.db.q("SELECT id FROM tags WHERE order_id=? AND status='held'", oid):
                     booth.staff_cancel_tag(t["id"])
                 o["cancel_at"] = None
-        if booth.db.get_state("paused"):
-            stats["paused_min"] += a.step / 60
-            if staff["resume_at"] is None:
-                staff["resume_at"] = now + rng.uniform(120, 300)
-                note(f"queue paused: {booth.db.get_state('pause_reason')}")
-            elif now >= staff["resume_at"]:
-                booth.staff_pause(False)
-                staff["resume_at"] = None
-                note("staff resumed the queue")
         act = booth.db.active_plate()
         if act:
             if act["id"] not in plates_seen and act["status"] != "building":
@@ -180,11 +169,24 @@ def main() -> int:
                 if now >= staff["cc_at"]:
                     printer.resume()
                     staff["cc_at"] = None
-            elif act["status"] == "printed":
-                staff["clear_at"] = staff["clear_at"] or now + rng.uniform(60, 300)
+        else:
+            # staff: bed empty + base colour, then start the recommended plate (a failed one is
+            # restarted after looking at the printer); nothing recommended -> let plates fill up
+            failed = booth.db.q1("SELECT id FROM plates WHERE status='failed' ORDER BY id")
+            nxt = failed["id"] if failed else booth.recommended_plate()
+            if nxt is None:
+                staff["clear_at"] = None
+            else:
+                if staff["clear_at"] is None:
+                    staff["clear_at"] = now + rng.uniform(120, 300) if failed else now + rng.uniform(60, 300)
+                    if failed:
+                        note(f"plate {nxt} failed - staff restart it")
                 if now >= staff["clear_at"]:
-                    booth.staff_plate_cleared(act["id"])
                     staff["clear_at"] = None
+                    try:
+                        booth.staff_plate_start(nxt)
+                    except BoothError as e:
+                        note(f"start refused: {e}")
         # pickup
         for oid, o in orders.items():
             if o["ready_t"] is None:
@@ -192,7 +194,7 @@ def main() -> int:
                 if tags and all(t["status"] == "printed" for t in tags):
                     o["ready_t"] = now
             elif not o["picked"] and now >= o["ready_t"] + 120:
-                booth.staff_handed_out(oid)
+                booth.staff_pickup(oid)
                 o["picked"] = True
         stats["max_queue"] = max(stats["max_queue"], booth.open_tag_count())
 
@@ -204,7 +206,7 @@ def main() -> int:
         clock.t += a.step
         open_tags = booth.open_tag_count()
         if clock.t > end and ai >= len(arrivals) and open_tags == 0 and not booth.db.active_plate() \
-                and all(o["pays_at"] is None and o["cancel_at"] is None for o in orders.values()):
+                and all(o["picked"] for o in orders.values()):
             break
         if clock.t > end + 6 * 3600:
             note("STUCK: queue not empty 6 h after closing")
@@ -222,9 +224,10 @@ def main() -> int:
     nums = [o["number"] for o in db.q("SELECT number FROM orders")]
     if len(nums) != len(set(nums)):
         problems.append("duplicate pickup numbers")
-    printed_plates = db.q("SELECT * FROM plates WHERE status IN ('printed','done')")
+    printed_plates = db.q("SELECT * FROM plates WHERE status IN ('printed','done','archived')")
     per_plate = [db.q1("SELECT COUNT(*) AS n FROM tags WHERE plate_id=?", p["id"])["n"] for p in printed_plates]
-    failed = db.q("SELECT id, error FROM plates WHERE status IN ('failed','cancelled')")
+    failed = db.q("SELECT id, error FROM plates WHERE status IN ('failed','cancelled','deleted') "
+                  "AND started IS NOT NULL")
     for oid, o in orders.items():
         live = db.q1("SELECT COUNT(*) AS n FROM tags WHERE order_id=? AND status!='cancelled'", oid)["n"]
         if live and o["ready_t"] is None:
@@ -255,8 +258,7 @@ def main() -> int:
     print(f"money            {st['paid_cents'] / 100:.2f} EUR paid")
     print(f"plates           {len(printed_plates)} printed, {len(failed)} failed/cancelled, "
           f"tags/plate avg {statistics.mean(per_plate or [0]):.1f} (min {min(per_plate or [0])}, max {max(per_plate or [0])})")
-    print(f"printer busy     {busy / 3600:.1f} h of {span / 3600:.1f} h ({100 * busy / span:.0f} %), "
-          f"queue paused {stats['paused_min']:.0f} min")
+    print(f"printer busy     {busy / 3600:.1f} h of {span / 3600:.1f} h ({100 * busy / span:.0f} %)")
     print(f"max open tags    {stats['max_queue']}")
     if waits:
         print(f"wait until ready median {statistics.median(waits):.0f} min, 90 % {q(waits, 17):.0f} min, "

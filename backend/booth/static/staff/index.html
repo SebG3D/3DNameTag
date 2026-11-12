@@ -8,25 +8,24 @@
 </head>
 <body>
 <div id="login" class="card hidden">
-  <h1>Betreuer-Login</h1>
+  <h1>🔒 Betreuer</h1>
   <input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
-  <button id="loginBtn" class="primary">Anmelden</button>
+  <button id="loginBtn" class="primary big">Los</button>
   <p id="loginErr" class="err"></p>
 </div>
 
 <main id="app" class="hidden">
   <header>
-    <span id="printerChip" class="chip">Drucker …</span>
+    <span id="printerChip" class="status">Drucker …</span>
     <span id="etaAll" class="muted"></span>
-    <button id="pauseBtn" class="small">Pause</button>
-    <button id="statsBtn" class="small">📊 Tag</button>
-    <button id="settingsBtn" class="small">⚙ Einstellungen</button>
-    <a href="/kiosk/" class="small kiosk-link">Kiosk</a>
+    <span class="spacer"></span>
+    <button id="statsBtn" class="small" title="Tag / Statistik">📊</button>
+    <button id="settingsBtn" class="small" title="Einstellungen">⚙️</button>
+    <a href="/kiosk/" class="small kiosk-link" title="Zum Kiosk">Kiosk</a>
   </header>
-  <p id="pauseReason" class="err hidden"></p>
   <div id="clockBanner" class="banner bad hidden"></div>
 
-  <div id="settingsView" class="hidden">
+  <div id="settingsView" class="narrow hidden">
     <div id="settingsForm"></div>
     <div class="savebar">
       <span id="settingsMsg" class="muted"></span>
@@ -35,27 +34,34 @@
     </div>
   </div>
 
-  <div id="statsView" class="hidden"></div>
+  <div id="statsView" class="narrow hidden"></div>
 
   <div id="overview">
-  <section id="plateCard" class="card"></section>
-
-  <section class="card">
-    <h2>Warteschlange</h2>
-    <div id="waiting"></div>
-  </section>
-
-  <section class="card">
-    <h2>Bestellungen</h2>
-    <div id="orders"></div>
-  </section>
-
-  <section class="card">
-    <h2>Letzte Platten</h2>
-    <div id="plates"></div>
-  </section>
+    <section class="col">
+      <h2>🧱 Platten</h2>
+      <div id="plates"></div>
+    </section>
+    <section class="col">
+      <h2>🎁 Abholen</h2>
+      <div id="orders"></div>
+    </section>
   </div>
 </main>
+
+<!-- big yes/no question (kids use this page: no tiny browser dialogs) -->
+<div id="modal" class="overlay hidden">
+  <div class="dialog">
+    <div id="modalText"></div>
+    <div class="dialog-buttons">
+      <button id="modalNo" class="big">✕ Nein</button>
+      <button id="modalYes" class="big primary">✓ Ja</button>
+    </div>
+  </div>
+</div>
+
+<!-- plate preview, fullscreen; any click closes it -->
+<div id="preview" class="overlay hidden"></div>
+
 <script src="staff.js"></script>
 <script src="settings.js"></script>
 <script src="stats.js"></script>

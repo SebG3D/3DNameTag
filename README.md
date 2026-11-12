@@ -41,15 +41,18 @@ Kiosk API: `GET /api/config`, `GET /api/status`, `POST /api/fit`, `POST /api/pre
 For the real printer set `"printer": {"type": "prusalink", "host": ..., "api_key": ...}` – a USB stick must be
 in the printer (upload target). The PrusaLink client is tested on the real Core One+ (digest auth with user `maker` +
 password); results and timings: `docs/hardware-test-2026-11-10.md`. Note: the printer starts a new upload even in
-FINISHED – "Platte leer" on the staff page is the only guard against printing onto a full bed.
+FINISHED – the "Druckplatte leer?" question when staff press Start is the only guard against printing onto a full bed.
 
 Staff page "📊 Tag": today's numbers (orders, printed, money, colours), CSV export, backups
 (hourly, `data/backups/`), "Tag abschließen" at the end of the day, clock + shutdown on the Pi.
 
-Flow: order → first tag queued, extra tags wait for "Bezahlt" → tags grouped by text colour → plate when
-`plate.max_tags` are waiting, after `plate.max_wait_min`, or "Jetzt starten" → colour change: staff load the
-text colour and confirm on the printer → plate done: take tags off (plate map with order numbers), load the
-base colour again, tap "Platte leer" → next plate.
+Flow: order → all tags queued at once (extra tags are paid at pickup) → each tag goes onto a waiting plate of
+its text colour (up to `plate.max_tags` and what fits) → staff press ▶ Start on a plate (nothing starts by
+itself; ⭐ marks the recommended one: full, or its oldest tag waited `plate.max_wait_min`) → colour change:
+staff load the text colour and confirm on the printer → plate done: take tags off (tap the plate for the
+preview with order numbers), load the base colour, start the next plate. Failed or done plates can be
+restarted (🔁), any plate deleted (🗑️, unprinted names go back onto a new plate). Pickup: 🎁 Abgeholt
+(asks for the money if something is due).
 
 ## Kiosk frontend
 ```

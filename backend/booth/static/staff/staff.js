@@ -1,4 +1,5 @@
-// Staff page: login, poll /api/staff/overview every 2 s, render, actions.
+// Staff page: login, poll /api/staff/overview every 2 s, plates + pickup list, actions.
+// Used by kids at the booth: big, short words, icons, every risky tap asks first.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
@@ -9,13 +10,17 @@ if (location.hash.startsWith("#token=")) {          // hand-over from another de
 }
 let data = null;
 
+// [text, css class, icon]  (settings.js uses the text)
 const PRINTER = {
-  offline: ["Drucker offline", "bad"], idle: ["Drucker bereit", "ok"], printing: ["Druckt", "busy"],
-  attention: ["Drucker wartet", "att"], paused: ["Pausiert", "att"], finished: ["Fertig", "ok"],
-  busy: ["Beschäftigt", "busy"], error: ["Fehler", "bad"],
+  offline: ["Drucker aus", "bad", "📵"], idle: ["Drucker bereit", "ok", "✅"], printing: ["Druckt", "busy", "🖨️"],
+  attention: ["Drucker wartet", "att", "✋"], paused: ["Pause", "att", "⏸️"], finished: ["Fertig", "ok", "✅"],
+  busy: ["Beschäftigt", "busy", "⏳"], error: ["Fehler", "bad", "❌"],
 };
-const TAG_STATUS = { held: "wartet auf Zahlung", queued: "in Warteschlange", plated: "wird gedruckt",
-  printed: "fertig", cancelled: "storniert" };
+const PLATE = {                     // plate state -> [icon, word, css]
+  waiting: ["⏳", "Wartet", "wait"], printing: ["🖨️", "Druckt", "busy"], done: ["✅", "Fertig", "ok"],
+  error: ["❌", "Fehler", "bad"],
+};
+const TAG_ICON = { held: "⏳", queued: "⏳", plated: "🖨️", printed: "✅", cancelled: "✕" };
 const SHAPE = { stadium: "Anhänger", wave: "Welle", star: "Stern", tree: "Baum", bell: "Glocke" };
 
 function esc(s) {
@@ -34,12 +39,41 @@ async function api(path, opts = {}) {
   return body;
 }
 
-async function act(path, confirmText) {
-  if (confirmText && !confirm(confirmText)) return;
+// ---------------------------------------------------------------- big dialogs
+let modalYes = null;
+function ask(html, yesLabel = "✓ Ja", yesClass = "primary") {
+  return new Promise((resolve) => {
+    $("modalText").innerHTML = html;
+    $("modalYes").textContent = yesLabel;
+    $("modalYes").className = "big " + yesClass;
+    $("modalYes").classList.remove("hidden");
+    $("modalNo").textContent = "✕ Nein";
+    $("modal").classList.remove("hidden");
+    modalYes = resolve;
+  });
+}
+function tell(html) {                     // message with one OK button
+  $("modalText").innerHTML = html;
+  $("modalYes").classList.add("hidden");
+  $("modalNo").textContent = "OK";
+  $("modal").classList.remove("hidden");
+  modalYes = null;
+}
+function closeModal(answer) {
+  $("modal").classList.add("hidden");
+  if (modalYes) modalYes(answer);
+  modalYes = null;
+}
+$("modalYes").onclick = () => closeModal(true);
+$("modalNo").onclick = () => closeModal(false);
+
+async function act(path, question, yesLabel, yesClass) {
+  if (question && !(await ask(question, yesLabel, yesClass))) return;
   try { await api(path, { method: "POST" }); await refresh(); }
-  catch (e) { if (e.message !== "login") alert("Fehler: " + e.message); }
+  catch (e) { if (e.message !== "login") tell(`<p class="q">❌ Geht nicht</p><p>${esc(e.message)}</p>`); }
 }
 
+// ---------------------------------------------------------------- login
 function showLogin() {
   token = ""; sessionStorage.removeItem("staffToken");
   $("app").classList.add("hidden"); $("login").classList.remove("hidden"); $("pin").focus();
@@ -54,113 +88,178 @@ async function login() {
   refresh();
 }
 
-function plateMap(p) {
-  const W = 250, H = 220;
-  const nums = Object.fromEntries(p.tags.map((t) => [t.id, t]));
-  const rects = p.map.map((m) => {
-    const t = nums[m.tag_id] || { name: "?", order_number: "?" };
-    const y = H - m.y - m.h;                       // printer Y=0 is the front -> bottom of the drawing
-    const rect = `<rect x="${m.x}" y="${y}" width="${m.w}" height="${m.h}" rx="3" fill="${esc(data.base_color.hex)}"/>`;
-    const name = `<tspan fill="${esc(color(p.text_color).hex)}">${esc(t.name)}</tspan>`;
-    if (m.h < 26)                                  // flat tag: number and name in one line
-      return rect + `<text x="${m.x + 3}" y="${y + m.h / 2 + 3}">#${esc(t.order_number)} ${name}</text>`;
-    return rect + `<text class="num" x="${m.x + 3}" y="${y + 12}">#${esc(t.order_number)}</text>
-      <text x="${m.x + 3}" y="${y + m.h - 4}">${name}</text>`;
-  }).join("");
-  return `<svg class="map" viewBox="0 0 ${W} ${H + 12}">
-    <rect width="${W}" height="${H}" fill="#3a3a46" rx="4"/>${rects}
-    <text x="${W / 2 - 14}" y="${H + 10}">vorne</text></svg>`;
-}
-
-function renderPlate() {
-  const el = $("plateCard");
-  const st = data.printer;
-  const active = data.plates.find((p) => ["building", "printing", "color_change", "printed"].includes(p.status));
-  const failed = !active && data.plates[0] && data.plates[0].status === "failed" ? data.plates[0] : null;
-  const base = data.base_color;
-  if (!active) {
-    el.innerHTML = `<h2>Aktuelle Platte</h2>` + (failed
-      ? `<div class="banner bad">Platte ${failed.id} fehlgeschlagen</div><p class="err">${esc(failed.error || "")}</p>
-         <p>Die Namen sind wieder in der Warteschlange. Drucker prüfen, dann oben „Weiter“ drücken.</p>`
-      : `<p class="muted">Keine Platte in Arbeit. ${data.paused ? "Warteschlange pausiert." :
-          "Nächste Platte startet, wenn genug Namen einer Farbe warten (oder „Jetzt starten“)."}</p>
-         <p>Im Drucker muss die Grundfarbe ${dot(base.hex)}<b>${esc(base.name)}</b> eingelegt sein.</p>`);
-    return;
+// ---------------------------------------------------------------- plate preview
+function bbox(d) {
+  const n = (d.match(/-?\d+(?:\.\d+)?(?:e-?\d+)?/gi) || []).map(Number);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i + 1 < n.length; i += 2) {
+    x0 = Math.min(x0, n[i]); x1 = Math.max(x1, n[i]); y0 = Math.min(y0, n[i + 1]); y1 = Math.max(y1, n[i + 1]);
   }
-  const c = color(active.text_color);
-  const names = active.tags.map((t) => `${esc(t.name)} <span class="muted">#${t.order_number}</span>`).join(", ");
-  let body = "";
-  if (active.status === "building") body = `<div class="banner">Platte wird vorbereitet …</div>`;
-  if (active.status === "printing") body = `
-    <div class="row">${dot(base.hex)} Grundfarbe ${esc(base.name)}, dann Text ${dot(c.hex)}<b>${esc(c.name)}</b></div>
-    <div class="bar"><div style="width:${st.progress}%"></div></div>
-    <p class="muted">${st.progress} % · noch ${mins(st.remaining_s)} · geschätzt ${mins(active.est_s)}</p>
-    <p>Beim Farbwechsel <b>${esc(c.name)}</b> einlegen.</p>`;
-  if (active.status === "color_change") body = `
-    <div class="banner att">Farbwechsel! ${dot(c.hex)}${esc(c.name)} einlegen und am Drucker bestätigen</div>
-    ${data.printer.kind === "sim" ? `<button class="warn" onclick="act('/api/staff/sim/resume')">Sim: Farbe gewechselt</button>` : ""}`;
-  if (active.status === "printed") body = `
-    <div class="banner ok">Platte fertig – Anhänger abnehmen und sortieren</div>
-    ${plateMap(active)}
-    <div class="row"><button class="primary" onclick="act('/api/staff/plates/${active.id}/cleared',
-      'Platte leer und Grundfarbe ${esc(base.name)} eingelegt?')">Platte leer &amp; ${esc(base.name)} eingelegt</button></div>`;
-  el.innerHTML = `<h2>Platte ${active.id} ${dot(c.hex)}${esc(c.name)} · ${active.tags.length} Anhänger</h2>
-    ${body}<p class="muted">${names}</p>
-    <div class="row">
-      ${active.status !== "printed" && active.map.length ? `<details><summary class="muted">Plattenplan</summary>${plateMap(active)}</details>` : ""}
-      ${active.gcode ? `<a class="muted" href="/api/staff/plates/${active.id}/gcode?token=${encodeURIComponent(token)}">G-Code (USB)</a>` : ""}
-      <button class="danger small" onclick="act('/api/staff/plates/${active.id}/cancel',
-        'Platte abbrechen? Die Namen kommen zurück in die Warteschlange.${data.printer.kind === "prusalink" ? " Der Druck wird am Drucker gestoppt." : " Den Druck am Drucker selbst stoppen!"}')">Abbrechen</button>
-    </div>`;
+  return [x0, y0, x1, y1];
 }
 
-function renderWaiting() {
-  const w = data.waiting_by_color;
-  const rows = data.text_colors.filter((c) => w[c.id]).map((c) => `
-    <div class="row">${dot(c.hex)}<b>${esc(c.name)}</b>: ${w[c.id]} Anhänger
-      <button class="small" onclick="act('/api/staff/start_now/${c.id}')">Jetzt starten</button></div>`).join("");
-  $("waiting").innerHTML = (rows || `<p class="muted">Keine Namen in der Warteschlange.</p>`) +
-    (data.held ? `<p class="muted">${data.held} Anhänger warten auf Zahlung.</p>` : "");
+// Bed seen from above, front at the bottom; real tag shapes with the order number.
+function plateSvg(p) {
+  const W = 250, H = 220;
+  const byId = Object.fromEntries(p.tags.map((t) => [t.id, t]));
+  const base = data.base_color.hex, txt = color(p.text_color).hex;
+  const tags = p.map.map((m) => {
+    const t = byId[m.tag_id];
+    if (!t) return "";
+    const top = H - m.y - m.h;                      // printer Y=0 is the front -> bottom of the drawing
+    let shape;
+    if (t.outline) {
+      const [x0, y0] = bbox(t.outline);
+      shape = `<g transform="translate(${m.x - x0} ${top - y0})">
+        <path d="${t.outline}" fill="${esc(base)}" fill-rule="evenodd" stroke="rgba(0,0,0,.4)" stroke-width=".4"/>
+        <path d="${t.text}" fill="${esc(txt)}" fill-rule="evenodd"/></g>`;
+    } else {
+      shape = `<rect x="${m.x}" y="${top}" width="${m.w}" height="${m.h}" rx="3" fill="${esc(base)}"/>
+        <text class="name" x="${m.x + m.w / 2}" y="${top + m.h / 2 + 3}" fill="${esc(txt)}">${esc(t.name)}</text>`;
+    }
+    return shape + `<g class="badge"><rect x="${m.x - 4}" y="${top - 6}" width="${String(t.order_number).length * 5 + 9}"
+      height="10" rx="5"/><text x="${m.x + 0.5}" y="${top + 1.6}">#${esc(t.order_number)}</text></g>`;
+  }).join("");
+  return `<svg class="bed" viewBox="-8 -10 ${W + 16} ${H + 26}">
+    <rect width="${W}" height="${H}" rx="6" fill="#3a3a46"/>${tags}
+    <text class="front" x="${W / 2}" y="${H + 12}">▼ vorne ▼</text></svg>`;
 }
 
-function renderOrders() {
-  const orders = data.orders.slice().sort((a, b) => (b.ready - a.ready) || (a.paid - b.paid) || (a.number - b.number));
-  $("orders").innerHTML = orders.map((o) => {
-    const due = !o.paid && o.price_cents > 0;
-    const tags = o.tags.map((t) => `<div class="tag">${dot(color(t.text_color).hex)}<span class="name">${esc(t.name)}</span>
-      <span class="muted">${esc(SHAPE[t.shape] || t.shape)} · ${esc(t.font)} · ${TAG_STATUS[t.status] || t.status}${t.free ? " · gratis" : ""}</span>
-      ${["held", "queued"].includes(t.status) ? `<button class="danger small" onclick="act('/api/staff/tags/${t.id}/cancel', 'Anhänger ${esc(t.name)} stornieren?')">✕</button>` : ""}
-      </div>`).join("");
-    return `<div class="order"><div class="row"><span class="num">#${o.number}</span>
-      ${o.customer ? `<b class="customer">${esc(o.customer)}</b>` : ""}
-      ${o.day !== data.today ? `<span class="chip">${esc(o.day.slice(8))}.${esc(o.day.slice(5, 7))}.</span>` : ""}
-      ${o.ready ? `<span class="chip ok">abholbereit</span>` : ""}
-      ${due ? `<span class="chip att">${euro(o.price_cents)} offen</span>
-        <button class="warn small" onclick="act('/api/staff/orders/${o.id}/paid', '${euro(o.price_cents)} kassiert?')">Bezahlt</button>` : ""}
-      ${o.ready ? `<button class="primary small" onclick="act('/api/staff/orders/${o.id}/handed_out')">Abgeholt</button>` : ""}
-      <button class="danger small" onclick="act('/api/staff/orders/${o.id}/cancel', 'Bestellung #${o.number}${o.customer ? ` (${esc(o.customer)})` : ""} stornieren?')">Storno</button>
-      </div>${tags}</div>`;
-  }).join("") || `<p class="muted">Keine offenen Bestellungen.</p>`;
+function showPreview(id) {
+  const p = data.plates.find((x) => x.id === id);
+  if (!p) return;
+  const c = color(p.text_color);
+  $("preview").innerHTML = `<div class="preview-title">Platte ${p.id} · ${dot(c.hex)} ${esc(c.name)} ·
+    ${p.count} von ${p.max} <span class="muted">· tippen zum Schließen</span></div>${plateSvg(p)}`;
+  $("preview").classList.remove("hidden");
+}
+$("preview").onclick = () => $("preview").classList.add("hidden");
+
+// ---------------------------------------------------------------- plates
+const busy = () => data.plates.some((p) => p.state === "printing");
+
+function plateRow(p) {
+  const [icon, word, cls] = PLATE[p.state];
+  const c = color(p.text_color);
+  const st = data.printer;
+  let extra = "";
+  if (p.status === "building") extra = `<div class="note">⚙️ Wird vorbereitet …</div>`;
+  if (p.status === "printing") {
+    const prog = st.progress || 0;
+    extra = `<div class="bar"><div style="width:${prog}%"></div></div>
+      <div class="note">${Math.round(prog)} % · noch ${mins(st.remaining_s)}</div>`;
+  }
+  if (p.status === "color_change") extra = `<div class="banner att">🎨 Jetzt ${dot(c.hex)} ${esc(c.name)} einlegen!</div>
+    ${st.kind === "sim" ? `<button class="warn" data-sim>Sim: Farbe gewechselt</button>` : ""}`;
+  if (p.state === "error") extra = `<div class="note err">${esc(p.error || "Fehler")}</div>`;
+  if (p.state === "done") extra = `<div class="note">🧹 Anhänger abnehmen</div>`;
+
+  let btn = "";
+  if (p.state === "waiting" || p.state === "error" || p.state === "done") {
+    const label = p.state === "waiting" ? "▶ Start" : "🔁 Nochmal";
+    btn = `<button class="big ${p.state === "waiting" ? "primary" : "warn"}" data-start="${p.id}"
+      ${busy() ? "disabled" : ""}>${label}</button>`;
+  }
+  const names = p.tags.map((t) => `${esc(t.name)} <span class="muted">#${esc(t.order_number)}</span>`).join(", ");
+  return `<div class="plate ${cls}${p.recommended && !busy() ? " next" : ""}" data-show="${p.id}">
+    <div class="plate-main">
+      <span class="pstate ${cls}">${icon} ${word}</span>
+      <span class="pnum">Platte ${p.id}</span>
+      <span class="pcolor">${dot(c.hex)} ${esc(c.name)}</span>
+      <span class="pcount">🏷️ ${p.count}/${p.max}</span>
+      ${p.recommended && !busy() ? `<span class="hint">⭐ als Nächstes</span>` : ""}
+      <span class="spacer"></span>
+      ${btn}
+      <button class="big icon danger" data-del="${p.id}" title="Löschen">🗑️</button>
+    </div>
+    ${extra}
+    <div class="names">${names} <span class="eye">👁️</span></div>
+  </div>`;
 }
 
 function renderPlates() {
-  const label = { building: "wird gebaut", printing: "druckt", color_change: "Farbwechsel", printed: "fertig, abnehmen",
-    done: "erledigt", failed: "fehlgeschlagen", cancelled: "abgebrochen" };
-  $("plates").innerHTML = data.plates.map((p) => `<div class="row">Platte ${p.id} ${dot(color(p.text_color).hex)}
-    ${p.tags.length} Anhänger · ${label[p.status] || p.status} ${p.est_s ? "· " + mins(p.est_s) : ""}
-    ${p.error ? `<span class="err">${esc(p.error)}</span>` : ""}</div>`).join("") || `<p class="muted">Noch keine.</p>`;
+  $("plates").innerHTML = data.plates.map(plateRow).join("") ||
+    `<p class="empty">Noch keine Platten. Sie kommen, sobald jemand bestellt.</p>`;
 }
 
+function startPlate(p) {
+  const c = color(p.text_color), base = data.base_color;
+  const again = p.state !== "waiting";
+  act(`/api/staff/plates/${p.id}/start`, `<p class="q">${again ? "🔁" : "▶"} Platte ${p.id} ${again ? "nochmal drucken" : "starten"}?</p>
+    <ul class="checks"><li>🧹 Druckplatte leer?</li><li>${dot(base.hex)} <b>${esc(base.name)}</b> eingelegt?</li></ul>
+    <p class="muted">Danach Text in ${dot(c.hex)} ${esc(c.name)}.</p>`, "✓ Ja, los!");
+}
+
+function deletePlate(p) {
+  const what = { waiting: "Die Namen kommen auf eine neue Platte.", error: "Die Namen kommen auf eine neue Platte.",
+    printing: "⚠️ Der Druck wird gestoppt! Die Namen kommen auf eine neue Platte.",
+    done: "Sie verschwindet nur aus der Liste." }[p.state];
+  act(`/api/staff/plates/${p.id}/delete`, `<p class="q">🗑️ Platte ${p.id} löschen?</p><p>${what}</p>
+    <p><b>Bist du sicher?</b></p>`, "🗑️ Ja, löschen", "danger-solid");
+}
+
+$("plates").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-start],[data-del],[data-sim],[data-show]");
+  if (!el || el.disabled) return;
+  const find = (id) => data.plates.find((p) => p.id === Number(id));
+  if (el.dataset.start) startPlate(find(el.dataset.start));
+  else if (el.dataset.del) deletePlate(find(el.dataset.del));
+  else if ("sim" in el.dataset) act("/api/staff/sim/resume");
+  else showPreview(Number(el.dataset.show));
+});
+
+// ---------------------------------------------------------------- pickup
+function renderOrders() {
+  const orders = data.orders.slice().sort((a, b) => (b.ready - a.ready) || (a.number - b.number));
+  $("orders").innerHTML = orders.map((o) => {
+    const due = !o.paid && o.price_cents > 0;
+    const live = o.tags.filter((t) => t.status !== "cancelled");
+    const tags = live.map((t) => `<span class="tag">${TAG_ICON[t.status] || ""} ${dot(color(t.text_color).hex)}
+      <b>${esc(t.name)}</b>${["held", "queued"].includes(t.status)
+        ? `<button class="x" data-cancel-tag="${t.id}" data-name="${esc(t.name)}" title="Stornieren">✕</button>` : ""}</span>`).join("");
+    return `<div class="order${o.ready ? " ready" : ""}">
+      <div class="order-main">
+        <span class="onum">#${o.number}</span>
+        ${o.customer ? `<span class="customer">${esc(o.customer)}</span>` : ""}
+        ${o.day !== data.today ? `<span class="chip">${esc(o.day.slice(8))}.${esc(o.day.slice(5, 7))}.</span>` : ""}
+        <span class="spacer"></span>
+        ${due ? `<button class="money" data-paid="${o.id}" title="Schon bezahlt">💶 ${euro(o.price_cents)}</button>` : ""}
+        ${o.ready ? `<button class="big primary" data-pickup="${o.id}">🎁 Abgeholt</button>` : ""}
+        <button class="big icon danger" data-cancel="${o.id}" title="Stornieren">🗑️</button>
+      </div>
+      <div class="tags">${tags}</div>
+    </div>`;
+  }).join("") || `<p class="empty">Keine Bestellungen.</p>`;
+}
+
+$("orders").addEventListener("click", (e) => {
+  const el = e.target.closest("button");
+  if (!el) return;
+  const o = data.orders.find((x) => x.id === Number(el.dataset.pickup || el.dataset.paid || el.dataset.cancel));
+  const who = o ? `#${o.number}${o.customer ? " " + esc(o.customer) : ""}` : "";
+  if (el.dataset.pickup) {
+    const due = !o.paid && o.price_cents > 0;
+    act(`/api/staff/orders/${o.id}/pickup`, due
+      ? `<p class="q">💶 ${euro(o.price_cents)} bekommen?</p><p>Dann ist ${who} abgeholt.</p>`
+      : `<p class="q">🎁 ${who} abgeholt?</p>`, due ? "✓ Ja, Geld da" : "✓ Ja");
+  } else if (el.dataset.paid) {
+    act(`/api/staff/orders/${o.id}/paid`, `<p class="q">💶 ${who} hat ${euro(o.price_cents)} schon bezahlt?</p>`);
+  } else if (el.dataset.cancel) {
+    act(`/api/staff/orders/${o.id}/cancel`, `<p class="q">🗑️ Bestellung ${who} stornieren?</p>
+      <p>Nicht gedruckte Namen werden gelöscht.</p><p><b>Bist du sicher?</b></p>`, "🗑️ Ja, stornieren", "danger-solid");
+  } else if (el.dataset.cancelTag) {
+    act(`/api/staff/tags/${el.dataset.cancelTag}/cancel`, `<p class="q">✕ ${esc(el.dataset.name)} stornieren?</p>
+      <p><b>Bist du sicher?</b></p>`, "✕ Ja, stornieren", "danger-solid");
+  }
+});
+
+// ---------------------------------------------------------------- page
 function render() {
-  const [txt, cls] = PRINTER[data.printer.state] || [data.printer.state, ""];
-  $("printerChip").textContent = txt + (data.printer.kind === "sim" ? " (Sim)" : "");
-  $("printerChip").className = "chip " + cls;
+  const [txt, cls, icon] = PRINTER[data.printer.state] || [data.printer.state, "", "❔"];
+  $("printerChip").textContent = `${icon} ${txt}${data.printer.kind === "sim" ? " (Sim)" : ""}`;
+  $("printerChip").className = "status " + cls;
   $("etaAll").textContent = data.eta_all_s > 0 ? `alles fertig in ca. ${mins(data.eta_all_s)}` : "";
-  $("pauseBtn").textContent = data.paused ? "Weiter" : "Pause";
-  $("pauseBtn").className = "small " + (data.paused ? "primary" : "");
-  $("pauseReason").textContent = data.paused ? "Warteschlange pausiert" + (data.pause_reason ? ": " + data.pause_reason : "") : "";
-  $("pauseReason").classList.toggle("hidden", !data.paused);
-  renderPlate(); renderWaiting(); renderOrders(); renderPlates();
+  renderPlates(); renderOrders();
   renderClock();
 }
 
@@ -183,11 +282,10 @@ async function syncClock() {
 async function refresh() {
   if (!token) return showLogin();
   try { data = await api("/api/staff/overview"); render(); }
-  catch (e) { if (e.message !== "login") $("printerChip").textContent = "Server nicht erreichbar"; }
+  catch (e) { if (e.message !== "login") { $("printerChip").textContent = "📵 Server nicht erreichbar"; $("printerChip").className = "status bad"; } }
 }
 
 $("loginBtn").onclick = login;
 $("pin").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
-$("pauseBtn").onclick = () => act(`/api/staff/pause/${data && data.paused ? 0 : 1}`);
 if (token) { $("app").classList.remove("hidden"); refresh(); } else showLogin();
 setInterval(refresh, 2000);

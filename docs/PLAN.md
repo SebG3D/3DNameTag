@@ -66,12 +66,14 @@ shapes/
 2. Free-only order → queued at once. Order with paid tags → status
    "awaiting payment"; staff taps "paid" on the phone (or deletes the extra tags).
 3. Queue groups tags by text colour into plates (max tags per plate from config,
-   e.g. 6). A plate is started when it is full, or by staff ("start now"), or
-   after a max-wait time.
+   e.g. 6). Plates are listed as "waiting" while they fill; staff start them by
+   hand (2026-11-12: no auto start; the page recommends a full plate or one past
+   the max-wait time). Unpaid tags print too, money is taken at pickup.
 4. Plate start: arrange STLs → slice → insert M600 at first text layer → upload
    + start via PrusaLink. Staff page: "Plate 3: load WHITE at colour change".
-5. Plate done → staff page lists tags by order number for pickup sorting →
-   "bed cleared" → next plate.
+5. Plate done → staff page shows the plate preview with order numbers for pickup
+   sorting → staff start the next plate (confirming bed empty + base colour).
+   Done/failed plates can be restarted, any plate deleted.
 6. Kiosk shows order number + rough ETA (plate-based estimate).
 
 ## Status (2026-11-04)

@@ -74,7 +74,7 @@ fi
 
 say "packages"
 apt-get update
-apt-get install -y python3-venv python3-pip git curl openscad nodejs npm
+apt-get install -y python3-venv python3-pip git curl openscad nodejs npm fonts-noto-color-emoji   # emoji = icons on the staff page
 # hwclock (staff page sets the clock): its own package since Trixie
 apt-get install -y util-linux-extra 2>/dev/null || true
 # Kiosk screen only on a desktop image (labwc); on Lite / headless: backend only,

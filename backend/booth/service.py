@@ -3,11 +3,14 @@
 The HTTP layer (server.py) is a thin wrapper around this class, so the whole
 flow can be tested without HTTP and with a simulated printer.
 
-Plate policy: tags are grouped by text colour. A colour gets a plate when it
-has plate_max_tags tags waiting, when its oldest tag waited plate_max_wait_min,
-or when staff press "start now". The colour with the oldest waiting tag wins.
-After a plate the printer holds the TEXT colour, so staff confirm "bed cleared
-and base colour loaded" before the next plate starts.
+Plates: every new tag goes onto a waiting plate of its text colour at once
+(up to plate_max_tags and what fits on the bed), so staff see all plates
+ahead. Nothing starts by itself: staff press start on a plate (confirming the
+bed is empty and the base colour is loaded - after a plate the printer holds
+the TEXT colour). The page recommends the plate the old auto policy would
+have picked: full (or a newer plate of that colour exists) or its oldest tag
+waited plate_max_wait_min; oldest tag first. A failed or done plate can be
+restarted; deleting a plate puts its tags back in the queue.
 """
 import json
 import logging
@@ -23,7 +26,7 @@ from pathlib import Path
 
 from nametag.fonts import load_fonts
 from nametag.names import NAME_MAX, clean_name
-from nametag.plate import build_plate
+from nametag.plate import TOWER_KEEP_OUT, build_plate, pack
 from nametag.render import layout, render_svg, render_tag
 from nametag.setup import list_setups, load_setup
 from nametag.shapes import load_shapes
@@ -36,6 +39,7 @@ from .printer import Printer, PrinterStatus, SimPrinter, make_printer
 log = logging.getLogger("booth")
 
 PREVIEW_TTL_S = 600
+LISTED = ("waiting", "building", "printing", "color_change", "failed", "done")
 BACKUP_EVERY_S = 3600
 BACKUP_KEEP = 48
 ICON_NAME, ICON_FONT = "EMMA", "baloo"
@@ -103,6 +107,7 @@ class Booth:
         self._progress: dict[int, float] = {int(k): v for k, v in self.db.get_state("plate_progress", {}).items()}
         self._cc_since: dict[int, float] = {}       # plate -> when it started waiting (colour change / pause)
         self._cc_wait: dict[int, float] = {}        # plate -> seconds spent waiting (kept out of real_factor)
+        self._just_started: set[int] = set()        # started, printer not seen printing yet
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="render")
         self.lock = threading.RLock()            # scheduler vs. staff actions
         self.last_status = PrinterStatus("offline", message="not polled yet")
@@ -120,7 +125,7 @@ class Booth:
     def _recover(self) -> None:
         """A plate that was being built when the backend stopped is redone."""
         for p in self.db.q("SELECT id FROM plates WHERE status='building'"):
-            self.db.plate_status(p["id"], "failed", error="backend restart while building")
+            self.db.plate_status(p["id"], "failed", error="Programm neu gestartet")
 
     def public_config(self) -> dict:
         c = self.cfg
@@ -244,12 +249,15 @@ class Booth:
             dst = self.data / "tags" / f"{p.id}.stl"
             shutil.move(str(p.stl), dst)
             tags.append({"name": p.name, "font": p.font, "shape": p.shape, "text_color": color, "stl": dst,
-                         "area_mm2": p.area_mm2, "w_mm": p.w_mm, "h_mm": p.h_mm})
+                         "area_mm2": p.area_mm2, "w_mm": p.w_mm, "h_mm": p.h_mm,
+                         "outline": p.outline, "text_svg": p.text})
         for p, _ in previews:
             self.previews.pop(p.id, None)
             shutil.rmtree(p.stl.parent, ignore_errors=True)
         price = self.cfg.price_cents(len(tags))
         order = self.db.create_order(tags, price, self.cfg.free_tags, self.clock(), customer=customer)
+        with self.lock:
+            self.plan()
         # whole order (kids wait for all their tags); the forecast does not know
         # later arrivals, so it is scaled by the learned eta_factor, +2 min,
         # rounded up to 5 min (early is fine, late is not)
@@ -262,40 +270,74 @@ class Booth:
                 "price_cents": price, "needs_payment": price > 0,
                 "eta": time.strftime("%H:%M", time.localtime(eta)), "eta_s": int(eta - self.clock())}
 
+    def _start_order(self, plates: list[dict], now: float) -> list[dict]:
+        """Waiting/failed plates as {id, color, tags, first, ready_at}; ready_at =
+        when staff should start it (relative s): full plates (or an older plate
+        of a colour that has a newer one) and failed ones at once, the others
+        when their oldest tag waited plate_max_wait_min."""
+        c = self.cfg
+        wait_s = c.plate_max_wait_min * 60
+        newest = {}
+        for p in plates:
+            newest[p["color"]] = max(newest.get(p["color"], 0), p["id"])
+        for p in plates:
+            full = len(p["tags"]) >= c.plate_max_tags or p["id"] < newest[p["color"]] or p.get("failed")
+            p["ready_at"] = 0.0 if full else max(0.0, p["first"] + wait_s - now)
+        return plates
+
+    def _pending_plates(self) -> list[dict]:
+        now = self.clock()
+        plates = []
+        for pl in self.db.q("SELECT id, text_color, status FROM plates WHERE status IN ('waiting','failed') "
+                            "ORDER BY id"):
+            tags = self.db.q("SELECT id, area_mm2, COALESCE(queued_at, created) AS queued_at FROM tags "
+                             "WHERE plate_id=? AND status='queued' ORDER BY queued_at, id", pl["id"])
+            if tags:
+                plates.append({"id": pl["id"], "color": pl["text_color"], "tags": tags,
+                               "first": min(t["queued_at"] for t in tags), "failed": pl["status"] == "failed"})
+        loose: dict[str, list[dict]] = {}              # not planned yet (only between plan() calls)
+        for t in self.db.q("SELECT id, text_color, area_mm2, COALESCE(queued_at, created) AS queued_at FROM tags "
+                           "WHERE status='queued' AND plate_id IS NULL ORDER BY queued_at, id"):
+            loose.setdefault(t["text_color"], []).append(t)
+        for color, tags in loose.items():
+            for i in range(0, len(tags), self.cfg.plate_max_tags):
+                chunk = tags[i:i + self.cfg.plate_max_tags]
+                plates.append({"id": 10**9 + len(plates), "color": color, "tags": chunk,
+                               "first": chunk[0]["queued_at"]})
+        return self._start_order(plates, now)
+
+    def recommended_plate(self) -> int | None:
+        """The waiting plate staff should start next (None: let plates fill up)."""
+        ready = [(p["first"], p["id"]) for p in self._pending_plates() if p["ready_at"] <= 0 and p["id"] < 10**9]
+        return min(ready)[1] if ready else None
+
     def forecast(self) -> dict[int, float]:
-        """Seconds from now until each queued tag is printed: replays the plate
-        policy (oldest colour first, full plate or max wait) with the learned
-        time model. Held (unpaid) tags count as if paid now (staff usually
-        take the money within minutes)."""
-        c, now = self.cfg, self.clock()
+        """Seconds from now until each queued tag is printed, assuming staff
+        start plates as recommended (see _start_order) with the learned time
+        model."""
+        c = self.cfg
         t = 0.0
         plate = self.db.active_plate()
         if plate:
             st = self.last_status
             remain = st.remaining_s if st.remaining_s is not None and plate["status"] in ("printing", "color_change") \
-                else (plate["est_s"] or 0) * (0 if plate["status"] == "printed" else 1)
-            prep = c.plate_prep_min * 60 if plate["status"] == "printing" and self._progress.get(plate["id"], 0) < 1 else 0
+                else (plate["est_s"] or 0)
+            prep = c.plate_prep_min * 60 if plate["status"] != "color_change" and self._progress.get(plate["id"], 0) < 1 \
+                else 0
             t += remain * self.real_factor + prep + c.plate_change_min * 60
-        groups: dict[str, list[dict]] = {}
-        waiting = self.db.q("SELECT id, text_color, area_mm2, COALESCE(queued_at, ?) AS queued_at FROM tags "
-                            "WHERE status IN ('queued','held') ORDER BY COALESCE(queued_at, ?), id", now, now)
-        for tag in waiting:
-            groups.setdefault(tag["text_color"], []).append(tag)
-        done: dict[int, float] = {}
-        wait_s = c.plate_max_wait_min * 60
-        while groups:
-            def ready_at(tags):                       # when this colour may start (relative)
-                return 0.0 if len(tags) >= c.plate_max_tags else max(0.0, tags[0]["queued_at"] + wait_s - now)
-            start = max(t, min(ready_at(g) for g in groups.values()))
-            ready = [(g[0]["queued_at"], col) for col, g in groups.items() if ready_at(g) <= start]
-            col = min(ready)[1]
-            batch, groups[col] = groups[col][:c.plate_max_tags], groups[col][c.plate_max_tags:]
-            if not groups[col]:
-                del groups[col]
-            dur = (self.plate_overhead_s + sum(self.tag_estimate_s(x["area_mm2"]) for x in batch)) * self.real_factor \
-                + c.plate_prep_min * 60
+            tags = self.db.q("SELECT id FROM tags WHERE plate_id=? AND status='plated'", plate["id"])
+            done = {x["id"]: t - c.plate_change_min * 60 for x in tags}
+        else:
+            done = {}
+        plates = self._pending_plates()
+        while plates:
+            start = max(t, min(p["ready_at"] for p in plates))
+            nxt = min((p for p in plates if p["ready_at"] <= start), key=lambda p: (p["first"], p["id"]))
+            plates.remove(nxt)
+            dur = (self.plate_overhead_s + sum(self.tag_estimate_s(x["area_mm2"]) for x in nxt["tags"])) \
+                * self.real_factor + c.plate_prep_min * 60
             t = start + dur
-            for x in batch:
+            for x in nxt["tags"]:
                 done[x["id"]] = t
             t += c.plate_change_min * 60
         return done
@@ -316,45 +358,54 @@ class Booth:
         st = self.last_status.state
         return {"printer": st, "current_plate": current,
                 "queue_length": self.open_tag_count(), "queue_full": self.queue_full(),
-                "paused": bool(self.db.get_state("paused", False)), "config_rev": self.config_rev}
+                "paused": False, "config_rev": self.config_rev}
 
     # ------------------------------------------------------------ scheduler
-    def pick_next(self, force_color: str | None = None) -> tuple[str, list[dict]] | None:
-        now, c = self.clock(), self.cfg
-        groups: dict[str, list[dict]] = {}
-        for t in self.db.queued_tags():
-            groups.setdefault(t["text_color"], []).append(t)
-        if force_color:
-            return (force_color, groups[force_color][:c.plate_max_tags]) if force_color in groups else None
-        ready = [(tags[0]["queued_at"], color) for color, tags in groups.items()
-                 if len(tags) >= c.plate_max_tags or now - tags[0]["queued_at"] >= c.plate_max_wait_min * 60]
-        if not ready:
-            return None
-        color = min(ready)[1]
-        return color, groups[color][:c.plate_max_tags]
+    def _keep_out(self):
+        return TOWER_KEEP_OUT if self.setup.color_change == "tower" else None
+
+    def _fits(self, tags: list[dict]) -> bool:
+        return not pack([(str(t["id"]), t["w_mm"], t["h_mm"]) for t in tags], keep_out=self._keep_out())[1]
+
+    def plan(self) -> None:
+        """Put unassigned queued tags on a waiting plate of their colour (oldest
+        plate with room first, else a new one); drop empty waiting plates."""
+        max_tags = self.cfg.plate_max_tags
+        for t in self.db.queued_tags(unassigned=True):
+            for pl in self.db.q("SELECT id FROM plates WHERE status='waiting' AND text_color=? ORDER BY id",
+                                t["text_color"]):
+                on = self.db.q("SELECT id, w_mm, h_mm FROM tags WHERE plate_id=? AND status='queued'", pl["id"])
+                if len(on) < max_tags and self._fits(on + [t]):
+                    self.db.assign(t["id"], pl["id"])
+                    break
+            else:
+                self.db.assign(t["id"], self.db.new_plate(t["text_color"], self.clock()))
+        with self.db.tx() as c:
+            c.execute("UPDATE plates SET status='deleted' WHERE status='waiting' AND NOT EXISTS ("
+                      "SELECT 1 FROM tags t WHERE t.plate_id=plates.id AND t.status='queued')")
 
     def tick(self) -> None:
         """One scheduler step; called every ~2 s by the loop thread."""
         with self.lock:
             st = self.printer.status()
             self.last_status = st
+            self.plan()
             plate = self.db.active_plate()
-            if plate:
+            if not plate:
+                return
+            if plate["status"] == "building":
+                self._start_plate(plate["id"])
+            else:
                 self._supervise(plate, st)
-                return
-            if self.db.get_state("paused", False) or st.state not in ("idle", "finished"):
-                return
-            force = self.db.get_state("force_color")
-            nxt = self.pick_next(force)
-            if force:
-                self.db.set_state("force_color", None)
-            if nxt:
-                self._start_plate(*nxt)
 
     def _supervise(self, plate: dict, st: PrinterStatus) -> None:
         pid, status = plate["id"], plate["status"]
-        if status not in ("printing", "color_change"):
-            return                                   # printed: waits for staff
+        if pid in self._just_started:
+            if st.state in ("printing", "attention", "paused", "busy") or \
+                    self.clock() - (plate["started"] or 0) > START_GRACE_S:
+                self._just_started.discard(pid)
+            elif st.state == "finished":
+                return              # still the FINISHED of the previous job (restart from FINISHED)
         if st.state in ("printing", "attention", "paused", "finished"):
             prog = 100.0 if st.state == "finished" else st.progress
             if int(prog) != int(self._progress.get(pid, -1)):
@@ -371,7 +422,7 @@ class Booth:
                 self.db.plate_status(pid, "printing")
         elif st.state == "finished":
             now = self.clock()
-            self.db.plate_status(pid, "printed", finished=now)
+            self.db.plate_status(pid, "done", finished=now)
             self._learn_eta(pid, now)
             if plate["started"] and plate["est_s"]:
                 # printing time only: without the fixed prep and the wait at the colour change
@@ -384,39 +435,43 @@ class Booth:
             if self._progress.get(pid, 0) >= 99:
                 # FINISHED was missed (backend down, or the end was confirmed on the
                 # printer before we polled) - the plate is done, do not reprint it
-                self.db.plate_status(pid, "printed", finished=self.clock())
-                log.info("plate %d: printer idle after %.0f %% - counted as printed", pid, self._progress[pid])
+                self.db.plate_status(pid, "done", finished=self.clock())
+                log.info("plate %d: printer idle after %.0f %% - counted as done", pid, self._progress[pid])
             else:
-                self.db.plate_status(pid, "failed", error="Drucker meldet bereit, Druck nicht fertig - "
-                                     "am Drucker abgebrochen?")
-                self._pause("Platte fehlgeschlagen")
+                self.db.plate_status(pid, "failed", error="Druck am Drucker abgebrochen")
         elif st.state == "error":
-            self.db.plate_status(pid, "failed", error=f"printer error: {st.message}")
-            self._pause("Druckerfehler")
+            self.db.plate_status(pid, "failed", error=f"Druckerfehler: {st.message}")
 
-    def _pause(self, reason: str) -> None:
-        self.db.set_state("paused", True)
-        self.db.set_state("pause_reason", reason)
-        log.warning("queue paused: %s", reason)
-
-    def _start_plate(self, color: str, tags: list[dict]) -> None:
-        pid = self.db.create_plate(color, [t["id"] for t in tags], self.clock())
+    def _start_plate(self, pid: int) -> None:
+        """Plate is 'building' (staff pressed start): pack + slice (or reuse the
+        G-code of a restart) and send it to the printer."""
+        plate = self.db.plate(pid)
+        tags = [t for t in plate["tags"] if t["status"] == "plated"]
         d = self.data / "plates"
         try:
-            stls = {str(t["id"]): Path(t["stl"]) for t in tags}
-            placed, rest = build_plate(stls, d / f"plate_{pid:03d}.3mf", self.setup)
-            res = slice_plate([d / f"plate_{pid:03d}.3mf"], d / f"plate_{pid:03d}.gcode", self.setup)
-            pmap = [{"tag_id": int(p.key), "x": round(p.x, 1), "y": round(p.y, 1),
-                     "w": round(float(p.w), 1), "h": round(float(p.h), 1)} for p in placed]
-            self.db.plate_built(pid, pmap, [int(k) for k in rest], res.gcode, res.estimated_s)
-            self._learn_time(res.estimated_s, [t for t in tags if str(t["id"]) not in rest])
-            self.printer.start(res.gcode, res.estimated_s)
-            self.db.plate_status(pid, "printing", started=self.clock())
-            log.info("plate %d started: %s, %d tags, est %d min", pid, color, len(placed), res.estimated_s // 60)
+            gcode = Path(plate["gcode"]) if plate["gcode"] else None
+            if gcode and gcode.exists() and plate["est_s"] and \
+                    {m["tag_id"] for m in plate["map"]} == {t["id"] for t in tags}:
+                est = plate["est_s"]                              # restart: same tags, same G-code
+            else:
+                stls = {str(t["id"]): Path(t["stl"]) for t in tags}
+                placed, rest = build_plate(stls, d / f"plate_{pid:03d}.3mf", self.setup)
+                res = slice_plate([d / f"plate_{pid:03d}.3mf"], d / f"plate_{pid:03d}.gcode", self.setup)
+                pmap = [{"tag_id": int(p.key), "x": round(p.x, 1), "y": round(p.y, 1),
+                         "w": round(float(p.w), 1), "h": round(float(p.h), 1)} for p in placed]
+                self.db.plate_built(pid, pmap, [int(k) for k in rest], res.gcode, res.estimated_s)
+                self._learn_time(res.estimated_s, [t for t in tags if str(t["id"]) not in rest])
+                gcode, est = res.gcode, res.estimated_s
+            self._progress.pop(pid, None)
+            self._cc_since.pop(pid, None)
+            self._cc_wait.pop(pid, None)
+            self.printer.start(gcode, est)
+            self._just_started.add(pid)
+            self.db.plate_status(pid, "printing", started=self.clock(), finished=None, error=None)
+            log.info("plate %d started: %s, %d tags, est %d min", pid, plate["text_color"], len(tags), est // 60)
         except Exception as e:                      # noqa: BLE001 - shown on the staff page
             log.exception("plate %d failed", pid)
-            self.db.plate_status(pid, "failed", error=str(e)[:500])
-            self._pause("Platte fehlgeschlagen")
+            self.db.plate_status(pid, "failed", error=str(e)[:300])
 
     def _learn_eta(self, pid: int, now: float) -> None:
         """Orders completed by this plate: compare real wait with the forecast."""
@@ -455,79 +510,106 @@ class Booth:
             self._thread.join(timeout=10)
 
     # --------------------------------------------------------------- staff
+    def _plate_view(self, pid: int, recommended: int | None) -> dict:
+        p = self.db.plate(pid)
+        live = [t for t in p["tags"] if t["status"] != "cancelled"]
+        pmap = p["map"]
+        if p["status"] == "waiting" or not pmap:                # not packed yet: same packing as the printer
+            placed, _ = pack([(str(t["id"]), t["w_mm"], t["h_mm"]) for t in live], keep_out=self._keep_out())
+            pmap = [{"tag_id": int(x.key), "x": round(x.x, 1), "y": round(x.y, 1), "w": x.w, "h": x.h}
+                    for x in placed]
+        state = {"waiting": "waiting", "failed": "error", "done": "done"}.get(p["status"], "printing")
+        return {"id": pid, "state": state, "status": p["status"], "text_color": p["text_color"],
+                "count": len(live), "max": self.cfg.plate_max_tags, "est_s": p["est_s"], "error": p["error"],
+                "started": p["started"], "finished": p["finished"], "recommended": pid == recommended,
+                "map": pmap,
+                "tags": [{"id": t["id"], "name": t["name"], "order_number": t["order_number"],
+                          "outline": t["outline"], "text": t["text_svg"]} for t in live]}
+
     def staff_overview(self) -> dict:
         orders = self.db.q("SELECT * FROM orders WHERE status='open' ORDER BY id")
         for o in orders:
-            o["tags"] = self.db.q("SELECT id, idx, name, font, shape, text_color, free, status, plate_id "
-                                  "FROM tags WHERE order_id=? ORDER BY idx", o["id"])
+            o["tags"] = self.db.q("SELECT t.id, t.idx, t.name, t.font, t.shape, t.text_color, t.free, t.status, "
+                                  "t.plate_id FROM tags t WHERE order_id=? ORDER BY idx", o["id"])
             live = [t for t in o["tags"] if t["status"] != "cancelled"]
             o["ready"] = bool(live) and all(t["status"] == "printed" for t in live)
-        plates = [self.db.plate(p["id"]) for p in
-                  self.db.q("SELECT id FROM plates ORDER BY id DESC LIMIT 8")]
-        waiting = {}
-        for t in self.db.queued_tags():
-            waiting.setdefault(t["text_color"], 0)
-            waiting[t["text_color"]] += 1
+        rec = self.recommended_plate()
+        rank = {"printing": 0, "error": 1, "waiting": 2, "done": 3}
+        plates = [self._plate_view(p["id"], rec) for p in self.db.q(
+            "SELECT id FROM plates WHERE status IN ('waiting','building','printing','color_change','failed','done') "
+            "ORDER BY id")]
+        plates.sort(key=lambda p: (rank[p["state"]], -p["id"] if p["state"] == "done" else p["id"]))
         st = self.last_status
         return {"printer": {"kind": self.printer.kind, "state": st.state, "progress": round(st.progress, 1),
                             "remaining_s": st.remaining_s, "message": st.message},
-                "paused": bool(self.db.get_state("paused", False)),
-                "pause_reason": self.db.get_state("pause_reason", ""),
-                "orders": orders, "plates": plates, "waiting_by_color": waiting,
-                "held": self.db.q1("SELECT COUNT(*) AS n FROM tags WHERE status='held'")["n"],
+                "orders": orders, "plates": plates,
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
                 "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day(),
                 "server_time": time.time()}
 
     def staff_paid(self, oid: int) -> None:
-        self.db.mark_paid(oid, self.clock())
+        self.db.mark_paid(oid)
+
+    def staff_pickup(self, oid: int) -> None:
+        """Handed out at the stand; the money (if any) was taken then."""
+        self.db.mark_paid(oid)
+        self.db.order_done(oid, self.clock())
 
     def staff_cancel_tag(self, tid: int) -> None:
         t = self.db.q1("SELECT * FROM tags WHERE id=?", tid)
         if not t:
             raise BoothError("not_found")
         if t["status"] not in ("held", "queued"):
-            raise BoothError("tag_on_plate", "tag is already on a plate")
-        self.db.cancel_tag(tid)
-        n = self.db.q1("SELECT COUNT(*) AS n FROM tags WHERE order_id=? AND status!='cancelled'",
-                       t["order_id"])["n"]
-        self.db.set_order_price(t["order_id"], self.cfg.price_cents(n))
-        if n == 0:
-            self.db.cancel_order(t["order_id"])
+            raise BoothError("tag_on_plate", "tag is already printing or printed")
+        with self.lock:
+            self.db.cancel_tag(tid)
+            n = self.db.q1("SELECT COUNT(*) AS n FROM tags WHERE order_id=? AND status!='cancelled'",
+                           t["order_id"])["n"]
+            self.db.set_order_price(t["order_id"], self.cfg.price_cents(n))
+            if n == 0:
+                self.db.cancel_order(t["order_id"])
+            self.plan()
 
     def staff_cancel_order(self, oid: int) -> None:
-        self.db.cancel_order(oid)
+        with self.lock:
+            self.db.cancel_order(oid)
+            self.plan()
 
     def staff_handed_out(self, oid: int) -> None:
         self.db.order_done(oid, self.clock())
 
-    def staff_plate_cleared(self, pid: int) -> None:
+    def staff_plate_start(self, pid: int) -> None:
+        """Start a waiting plate, or restart a failed/done one. Staff confirmed
+        the bed is empty and the base colour is loaded."""
         with self.lock:
-            p = self.db.plate(pid)
-            if not p or p["status"] != "printed":
-                raise BoothError("bad_state", "plate is not printed")
-            self.db.plate_status(pid, "done")
+            p = self.db.q1("SELECT * FROM plates WHERE id=?", pid)
+            if not p or p["status"] not in ("waiting", "failed", "done"):
+                raise BoothError("bad_state", "Platte kann nicht gestartet werden")
+            if not self.db.q1("SELECT 1 AS x FROM tags WHERE plate_id=? AND status IN ('queued','printed')", pid):
+                raise BoothError("bad_state", "Keine Anhänger auf der Platte")
+            if self.db.active_plate():
+                raise BoothError("bad_state", "Es druckt schon eine Platte")
+            st = self.printer.status()
+            self.last_status = st
+            if st.state not in ("idle", "finished"):
+                raise BoothError("printer_busy", "Drucker ist nicht bereit")
             self.printer.acknowledge()
+            self.db.plate_status(pid, "building", error=None)
 
-    def staff_plate_cancel(self, pid: int) -> None:
-        """Plate failed/aborted: its tags go back to the queue. Stop the print
-        on the printer itself."""
+    def staff_plate_delete(self, pid: int) -> None:
+        """Remove a plate from the list. Unprinted tags go back to the queue
+        (and onto a new plate); a running print is stopped."""
         with self.lock:
-            p = self.db.plate(pid)
-            if not p or p["status"] not in ("building", "printing", "color_change", "printed"):
+            p = self.db.q1("SELECT * FROM plates WHERE id=?", pid)
+            if not p or p["status"] not in LISTED:
                 raise BoothError("bad_state")
-            self.db.plate_status(pid, "cancelled", finished=self.clock())
-            self.printer.abort()
-
-    def staff_start_now(self, color: str) -> None:
-        if color not in {c["id"] for c in self.cfg.text_colors}:
-            raise BoothError("bad_color")
-        self.db.set_state("force_color", color)
-
-    def staff_pause(self, paused: bool) -> None:
-        self.db.set_state("paused", paused)
-        if not paused:
-            self.db.set_state("pause_reason", "")
+            if p["status"] == "done":
+                self.db.plate_status(pid, "archived")
+                return
+            if p["status"] in ("building", "printing", "color_change"):
+                self.printer.abort()
+            self.db.plate_status(pid, "deleted", finished=self.clock())
+            self.plan()
 
     def staff_sim_resume(self) -> None:
         if not isinstance(self.printer, SimPrinter):
@@ -661,7 +743,7 @@ class Booth:
         plates = {r["status"]: r["n"] for r in q(
             "SELECT status, COUNT(*) AS n FROM plates WHERE created>=? AND created<? GROUP BY status", lo, hi)}
         print_s = q1("SELECT COALESCE(SUM(finished - started), 0) AS s FROM plates "
-                     "WHERE status IN ('printed','done') AND created>=? AND created<?", lo, hi)["s"]
+                     "WHERE status IN ('printed','done','archived') AND created>=? AND created<?", lo, hi)["s"]
         return {"day": day, "orders": orders["n"], "paid_cents": orders["paid_cents"],
                 "due_cents": orders["due_cents"],
                 "tags_printed": tags.get("printed", 0),
@@ -669,7 +751,7 @@ class Booth:
                 "tags_cancelled": tags.get("cancelled", 0),
                 "free_tags": q1("SELECT COUNT(*) AS n FROM tags t JOIN orders o ON o.id=t.order_id "
                                 "WHERE o.day=? AND t.free=1 AND t.status!='cancelled'", day)["n"],
-                "plates_done": plates.get("done", 0) + plates.get("printed", 0),
+                "plates_done": plates.get("done", 0) + plates.get("printed", 0) + plates.get("archived", 0),
                 "plates_failed": plates.get("failed", 0) + plates.get("cancelled", 0),
                 "print_h": round(print_s / 3600, 1),
                 "by_color": by_color, "by_shape": by_shape, "by_font": by_font,
@@ -708,10 +790,11 @@ class Booth:
             now = self.clock()
             with self.db.tx() as c:
                 c.execute("UPDATE tags SET status='cancelled' WHERE status IN ('held','queued')")
+                c.execute("UPDATE plates SET status='deleted' WHERE status IN ('waiting','failed')")
+                c.execute("UPDATE plates SET status='archived' WHERE status='done'")
                 c.execute("UPDATE orders SET status='cancelled' WHERE status='open' AND NOT EXISTS ("
                           "SELECT 1 FROM tags t WHERE t.order_id=orders.id AND t.status!='cancelled')")
                 c.execute("UPDATE orders SET status='done', done_at=? WHERE status='open'", (now,))
-            self.db.set_state("force_color", None)
             removed = self.cleanup_files()
             path = self.backup(tag="close")
             self.db.set_state("day_closed", self._day())
@@ -726,7 +809,7 @@ class Booth:
             if p.exists():
                 p.unlink()
                 n += 1
-        for pl in self.db.q("SELECT id, gcode FROM plates WHERE status IN ('done','failed','cancelled')"):
+        for pl in self.db.q("SELECT id, gcode FROM plates WHERE status IN ('archived','deleted','cancelled')"):
             for f in (self.data / "plates").glob(f"plate_{pl['id']:03d}.*"):
                 f.unlink()
                 n += 1

@@ -122,6 +122,12 @@ def order(booth, *tags):
     return booth.place_order(items)
 
 
+def start(booth):
+    """Staff press start on the (only) waiting plate."""
+    booth.staff_plate_start(booth.db.q1("SELECT id FROM plates WHERE status='waiting' ORDER BY id")["id"])
+    booth.tick()
+
+
 def plate(booth):
     return booth.db.plate(booth.db.q("SELECT id FROM plates ORDER BY id DESC LIMIT 1")[0]["id"])
 
@@ -130,8 +136,7 @@ def test_booth_full_plate_over_prusalink(booth_fake):
     booth, f, host, clock = booth_fake
     order(booth, ("EMMA", "red"))
     order(booth, ("OPA", "red"))
-    booth.staff_start_now("red")
-    booth.tick()
+    start(booth)
     assert plate(booth)["status"] == "printing" and f.state == "PRINTING"
     assert any(n.startswith("plate_") for n in f.files)
     clock.advance(400)
@@ -144,9 +149,10 @@ def test_booth_full_plate_over_prusalink(booth_fake):
     clock.advance(1000)
     booth.tick()
     p = plate(booth)
-    assert p["status"] == "printed"
-    booth.staff_plate_cleared(p["id"])
-    assert booth.db.plate(p["id"])["status"] == "done"
+    assert p["status"] == "done" and f.state == "FINISHED"
+    booth.staff_plate_start(p["id"])                          # restart from FINISHED: same G-code
+    booth.tick()
+    assert plate(booth)["status"] == "printing" and f.state == "PRINTING"
 
 
 def test_missed_finish_is_not_reprinted(booth_fake, tmp_path):
@@ -154,8 +160,7 @@ def test_missed_finish_is_not_reprinted(booth_fake, tmp_path):
     the plate counts as printed (no duplicate tags)."""
     booth, f, host, clock = booth_fake
     order(booth, ("EMMA", "red"))
-    booth.staff_start_now("red")
-    booth.tick()
+    start(booth)
     clock.advance(400)
     booth.tick()                                               # colour change at ~50 %
     ctl(host, "resume")
@@ -167,32 +172,28 @@ def test_missed_finish_is_not_reprinted(booth_fake, tmp_path):
     booth2 = Booth(booth.cfg, setup_name="nozzle040s", clock=clock)   # backend restart
     clock.advance(200)
     booth2.tick()
-    assert plate(booth2)["status"] == "printed"
-    assert not booth2.db.get_state("paused")
+    assert plate(booth2)["status"] == "done"
 
 
-def test_abort_on_printer_pauses_queue(booth_fake):
+def test_abort_on_printer_fails_plate(booth_fake):
     booth, f, host, clock = booth_fake
     order(booth, ("EMMA", "red"))
-    booth.staff_start_now("red")
-    booth.tick()
+    start(booth)
     clock.advance(60)
     booth.tick()
     ctl(host, "abort")                                         # someone stops it on the printer
     ctl(host, "tap")
     clock.advance(120)
     booth.tick()
-    assert plate(booth)["status"] == "failed"
-    assert booth.db.get_state("paused") is True
-    assert booth.db.queued_tags()[0]["name"] == "EMMA"         # back in the queue
+    p = plate(booth)
+    assert p["status"] == "failed"
+    assert [t["name"] for t in p["tags"]] == ["EMMA"]          # stays on the plate for a restart
 
 
 def test_upload_refused_gives_clear_reason(booth_fake):
     booth, f, host, clock = booth_fake
     ctl(host, "no_usb/1")
     order(booth, ("EMMA", "red"))
-    booth.staff_start_now("red")
-    booth.tick()
+    start(booth)
     p = plate(booth)
     assert p["status"] == "failed" and "USB-Stick" in p["error"]
-    assert booth.db.get_state("paused") is True
