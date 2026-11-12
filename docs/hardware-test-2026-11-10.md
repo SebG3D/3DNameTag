@@ -159,10 +159,23 @@ a small correction to Y-15 → watch the first pass, adjust `wiper_z` if needed.
   6 mm text). Some long names no longer fit bell / Pacifico (kiosk offers other shapes).
 - New shape **wave** ("Welle"): band with a sine edge (amp 2.2, period 34 design units).
 
+## 2026-11-12: long names at scale 0.6, one text layer
+
+- Printer menu still had nozzle 0.40 after the swap → set to 0.25 (PrusaLink `/api/v1/info`
+  `nozzle_diameter` shows it; the G-code checks `M862.1 P0.25`).
+- Plate `wave_long` (8 wave tags, worst-case long names, text 4.6–6.0 mm): base up to the
+  M600 29.5 min, swap 12.5 min. Stopped after the 1st text layer because of a **layer shift
+  on the 2nd text layer**; one text layer is enough → `text_h` 0.3 → **0.15** (est. 33 → 29 min).
+- Look: baloo, fredoka 4.9 mm, pacifico 4.6–4.7 mm, titan 5.2 mm nice. Titan 4.7 mm too fat;
+  WWWW/MMMM in chewy/bangers letters too close.
+- Fixes: `fonts.json` per font `min_text_add` (titan +0.6 → min 5.1 mm) and `spacing`
+  (chewy, bangers 1.1, OpenSCAD `text(spacing=)`, used for measuring, preview and print);
+  Z-hop `retract_lift` 0.15 → **0.4** in all profiles (`make_profile.py` OVERRIDES).
+- Plate `spacing_test` (5 tags): 22.8 min to the M600, swap 6.5 min, text 3.5 min,
+  **33 min** total. Spacing, titan and text all nice, no shift.
+
 ## Open
-1. Test plate at scale 0.6 on the 0.25 (wave + long names): size and crispness OK?
-2. Fix the calibration prompt on the printer (done by the user 2026-11-11 – verify).
-3. Shorter prep between booth plates (skip/limit MBL? Prusa start G-code).
-4. PETG temperature per setup (stringing).
-5. `config/booth.json` still points at the booth address `192.168.10.2`; set the
+1. Shorter prep between booth plates (skip/limit MBL? Prusa start G-code).
+2. PETG temperature per setup (stringing).
+3. `config/booth.json` still points at the booth address `192.168.10.2`; set the
    printer password there (not in git) for the booth.

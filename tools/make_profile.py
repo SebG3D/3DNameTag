@@ -38,6 +38,9 @@ OVERRIDES = {
     "filament_minimal_purge_on_wipe_tower": "10",
     "filament_multitool_ramming": "0",
     "ooze_prevention": "0",
+    # Higher Z-hop: tiny PETG text curls up, and at 350 mm/s a 0.15 mm hop
+    # caught it and shifted the layer (test 2026-11-12, 2nd text layer).
+    "retract_lift": "0.4",
 }
 # Keep the bed hot after a plate: the next plate starts without the long
 # bed heat-up (firmware safety timer still switches heaters off when idle).

@@ -25,6 +25,7 @@ cy = 0;
 tw = 40;              // text bbox on the tag (design units), for "grow" shapes
 th = 10;
 k = 1;                // outline scale of "fit" shapes, 1 for "grow" shapes
+spacing = 1;          // letter spacing factor (fonts.json, tight fonts)
 part = "all";         // all | base | text | outline2d | text2d | measure2d
 
 /* [Print geometry, from config/print.json] */
@@ -41,7 +42,7 @@ assert(len(name) > 0, "empty name");
 assert(k >= 1, "k must be >= 1");
 
 module raw_text() {
-    text(name, size = size, font = font, halign = "left", valign = "baseline");
+    text(name, size = size, font = font, spacing = spacing, halign = "left", valign = "baseline");
 }
 
 module tag_text_2d() {

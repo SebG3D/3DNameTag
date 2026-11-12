@@ -90,7 +90,7 @@ def svg_bbox(svg: str) -> tuple[float, float, float, float]:
 def _measure_cached(name: str, font: Font) -> tuple[float, float, float, float]:
     with tempfile.TemporaryDirectory(prefix="measure_") as tmp:
         out = Path(tmp) / "text.svg"
-        run_openscad(font, None, out, {"name": name, "font": font.openscad,
+        run_openscad(font, None, out, {"name": name, "font": font.openscad, "spacing": font.spacing,
                                        "size": MEASURE_SIZE, "part": "measure2d"})
         return svg_bbox(out.read_text())
 
@@ -124,8 +124,9 @@ def layout(name: str, font: Font, shape: Shape, setup: PrintSetup) -> Layout:
         cx, cy = box["cx"] * k, box["cy"] * k
     sc = size / MEASURE_SIZE
     printed = size * setup.scale
-    fits = printed >= setup.min_text_size - 1e-6
-    reason = "" if fits else f"text too long for {shape.id} ({printed:.1f} mm < {setup.min_text_size} mm)"
+    min_size = setup.min_text_size + font.min_text_add
+    fits = printed >= min_size - 1e-6
+    reason = "" if fits else f"text too long for {shape.id} ({printed:.1f} mm < {min_size:.1f} mm)"
     r = lambda v: round(v, 4)
     return Layout(fits, r(size), r(-(x0 + x1) / 2 * sc), r(-(y0 + y1) / 2 * sc), rot, r(cx), r(cy),
                   r(ow * sc), r(oh * sc), r(k), r(printed), reason)
@@ -145,7 +146,7 @@ def render_tag(name: str, font: Font, shape: Shape, setup: PrintSetup, out_dir: 
     if not lay.fits:
         raise RenderError(lay.reason)
     out_dir.mkdir(parents=True, exist_ok=True)
-    common = {"name": name, "font": font.openscad, **lay.defines(), **setup.scad_defines()}
+    common = {"name": name, "font": font.openscad, "spacing": font.spacing, **lay.defines(), **setup.scad_defines()}
     files = {}
     for part in ("base", "text"):
         p = out_dir / f"{stem}_{part}.stl"
@@ -161,7 +162,7 @@ def render_tag(name: str, font: Font, shape: Shape, setup: PrintSetup, out_dir: 
 def render_svg(name: str, font: Font, shape: Shape, setup: PrintSetup, out: Path) -> tuple[str, str]:
     """2D outline and text as SVG path data (for the kiosk preview and checks)."""
     lay = layout(name, font, shape, setup)
-    common = {"name": name, "font": font.openscad, **lay.defines(), **setup.scad_defines()}
+    common = {"name": name, "font": font.openscad, "spacing": font.spacing, **lay.defines(), **setup.scad_defines()}
     res = []
     for part in ("outline2d", "text2d"):
         p = out.with_name(f"{out.stem}_{part}.svg")
