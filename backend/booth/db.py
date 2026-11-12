@@ -90,6 +90,9 @@ class DB:
         self.con.execute("UPDATE tags SET status='queued', queued_at=COALESCE(queued_at, created) "
                          "WHERE status='held'")
         self.con.execute("UPDATE plates SET status='done' WHERE status='printed'")
+        # old failed plates gave their tags back to the queue: nothing left to restart
+        self.con.execute("UPDATE plates SET status='deleted' WHERE status='failed' AND NOT EXISTS ("
+                         "SELECT 1 FROM tags t WHERE t.plate_id=plates.id AND t.status IN ('queued','plated'))")
         self.lock = threading.RLock()
 
     @contextmanager
