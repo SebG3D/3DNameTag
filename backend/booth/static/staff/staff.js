@@ -177,7 +177,7 @@ function plateRow(p) {
       <button class="big icon danger" data-del="${p.id}" title="Löschen">🗑️</button>
     </div>
     ${extra}
-    <div class="names">${names} <span class="eye">👁️</span></div>
+    <div class="names">${names}</div>
   </div>`;
 }
 

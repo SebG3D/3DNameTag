@@ -80,7 +80,6 @@ a.kiosk-link { font-weight: 700; text-decoration: none; color: #33333f; backgrou
 .pcolor, .pcount { font-size: 28px; font-weight: 700; }
 .hint { font-size: 22px; font-weight: 800; color: #1d6b2e; }
 .names { margin-top: 8px; font-size: 22px; color: #333; }
-.names .eye { float: right; opacity: .6; }
 .note { font-size: 24px; font-weight: 700; margin-top: 8px; }
 .bar { height: 22px; background: #e4e4ec; border-radius: 11px; overflow: hidden; margin-top: 10px; }
 .bar > div { height: 100%; background: #1e88e5; }
