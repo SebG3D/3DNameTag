@@ -115,14 +115,18 @@ function plateSvg(p) {
         <path d="${t.text}" fill="${esc(txt)}" fill-rule="evenodd"/></g>`;
     } else {
       shape = `<rect x="${m.x}" y="${top}" width="${m.w}" height="${m.h}" rx="3" fill="${esc(base)}"/>
-        <text class="name" x="${m.x + m.w / 2}" y="${top + m.h / 2 + 3}" fill="${esc(txt)}">${esc(t.name)}</text>`;
+        <text x="${m.x + m.w / 2}" y="${top + m.h / 2 + 2.5}" font-size="7" font-weight="700" text-anchor="middle"
+          font-family="system-ui, sans-serif" fill="${esc(txt)}">${esc(t.name)}</text>`;
     }
-    return shape + `<g class="badge"><rect x="${m.x - 4}" y="${top - 6}" width="${String(t.order_number).length * 5 + 9}"
-      height="10" rx="5"/><text x="${m.x + 0.5}" y="${top + 1.6}">#${esc(t.order_number)}</text></g>`;
+    const bw = String(t.order_number).length * 3.6 + 6;
+    return shape + `<rect x="${m.x - 2}" y="${top - 3}" width="${bw}" height="7" rx="3.5" fill="#fff" stroke="#222"
+      stroke-width=".4"/><text x="${m.x - 2 + bw / 2}" y="${top + 2.1}" font-size="5.5" font-weight="800"
+      text-anchor="middle" fill="#111" font-family="system-ui, sans-serif">#${esc(t.order_number)}</text>`;
   }).join("");
-  return `<svg class="bed" viewBox="-8 -10 ${W + 16} ${H + 26}">
+  return `<svg class="bed" viewBox="-6 -6 ${W + 12} ${H + 20}" preserveAspectRatio="xMidYMid meet">
     <rect width="${W}" height="${H}" rx="6" fill="#3a3a46"/>${tags}
-    <text class="front" x="${W / 2}" y="${H + 12}">▼ vorne ▼</text></svg>`;
+    <text x="${W / 2}" y="${H + 10}" font-size="7" font-weight="700" fill="#ccc" text-anchor="middle"
+      font-family="system-ui, sans-serif">▼ vorne ▼</text></svg>`;
 }
 
 function showPreview(id) {
@@ -160,7 +164,7 @@ function plateRow(p) {
     btn = `<button class="big ${p.state === "waiting" ? "primary" : "warn"}" data-start="${p.id}"
       ${busy() ? "disabled" : ""}>${label}</button>`;
   }
-  const names = p.tags.map((t) => `${esc(t.name)} <span class="muted">#${esc(t.order_number)}</span>`).join(", ");
+  const names = p.tags.map((t) => `${t.reprint ? "🔁 " : ""}${esc(t.name)} <span class="muted">#${esc(t.order_number)}</span>`).join(", ");
   return `<div class="plate ${cls}${p.recommended && !busy() ? " next" : ""}" data-show="${p.id}">
     <div class="plate-main">
       <span class="pstate ${cls}">${icon} ${word}</span>
@@ -216,7 +220,9 @@ function renderOrders() {
     const live = o.tags.filter((t) => t.status !== "cancelled");
     const tags = live.map((t) => `<span class="tag">${TAG_ICON[t.status] || ""} ${dot(color(t.text_color).hex)}
       <b>${esc(t.name)}</b>${["held", "queued"].includes(t.status)
-        ? `<button class="x" data-cancel-tag="${t.id}" data-name="${esc(t.name)}" title="Stornieren">✕</button>` : ""}</span>`).join("");
+        ? `<button class="x" data-cancel-tag="${t.id}" data-name="${esc(t.name)}" title="Stornieren">✕</button>` : ""}${
+        t.status === "printed" ? `<button class="again" data-reprint="${t.id}" data-name="${esc(t.name)}"
+          data-color="${esc(t.text_color)}" title="Nochmal drucken">🔁</button>` : ""}</span>`).join("");
     return `<div class="order${o.ready ? " ready" : ""}">
       <div class="order-main">
         <span class="onum">#${o.number}</span>
@@ -247,6 +253,10 @@ $("orders").addEventListener("click", (e) => {
   } else if (el.dataset.cancel) {
     act(`/api/staff/orders/${o.id}/cancel`, `<p class="q">🗑️ Bestellung ${who} stornieren?</p>
       <p>Nicht gedruckte Namen werden gelöscht.</p><p><b>Bist du sicher?</b></p>`, "🗑️ Ja, stornieren", "danger-solid");
+  } else if (el.dataset.reprint) {
+    const c = color(el.dataset.color);
+    act(`/api/staff/tags/${el.dataset.reprint}/reprint`, `<p class="q">🔁 ${esc(el.dataset.name)} nochmal drucken?</p>
+      <p>Kommt auf die nächste ${dot(c.hex)} ${esc(c.name)}-Platte.</p>`, "🔁 Ja, nochmal");
   } else if (el.dataset.cancelTag) {
     act(`/api/staff/tags/${el.dataset.cancelTag}/cancel`, `<p class="q">✕ ${esc(el.dataset.name)} stornieren?</p>
       <p><b>Bist du sicher?</b></p>`, "✕ Ja, stornieren", "danger-solid");

@@ -371,3 +371,26 @@ def test_auto_backup_rotates(env):
         clock.advance(svc.BACKUP_EVERY_S)
     files = list((booth.data / "backups").glob("booth-*.sqlite"))
     assert len(files) == svc.BACKUP_KEEP
+
+
+def test_reprint_single_tag(env):
+    booth, printer, clock = env
+    o = order(booth, ("A", "baloo", "stadium", "red"), ("B", "baloo", "stadium", "red"))
+    a, b = booth.db.order(o["order_id"])["tags"]
+    pid = plate_of(booth, a["id"])
+    with pytest.raises(BoothError):                         # not printed yet
+        booth.staff_reprint_tag(a["id"])
+    start(booth, pid)
+    run_until(booth, clock, lambda: booth.db.plate(pid)["status"] == "color_change")
+    printer.resume()
+    run_until(booth, clock, lambda: booth.db.plate(pid)["status"] == "done")
+    booth.staff_pickup(o["order_id"])
+    booth.staff_reprint_tag(b["id"])                       # B came out badly
+    new = plate_of(booth, b["id"])
+    assert new and new != pid
+    assert booth.db.order(o["order_id"])["status"] == "open"   # back on the pickup list
+    assert booth.recommended_plate() == new                    # old queue time: goes next
+    ov = booth.staff_overview()
+    assert not ov["orders"][0]["ready"]
+    start(booth, new)
+    assert [t["name"] for t in booth.db.plate(new)["tags"]] == ["B"]

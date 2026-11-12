@@ -63,6 +63,17 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
 
     app = FastAPI(title="3DNameTagBooth", lifespan=lifespan)
 
+    @app.middleware("http")
+    async def no_stale_pages(request, call_next):
+        """Staff page + kiosk index are not versioned: browsers must ask every time
+        (ETag -> 304), else an update shows new HTML with old CSS. Hashed kiosk
+        assets may stay cached."""
+        resp = await call_next(request)
+        path = request.url.path
+        if path.startswith("/staff") or (path.startswith("/kiosk") and not path.startswith("/kiosk/assets/")):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     @app.exception_handler(BoothError)
     async def booth_error(_, e: BoothError):
         return JSONResponse({"error": e.code, "message": str(e)}, status_code=409 if e.code in (
@@ -119,6 +130,7 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
         ("orders", "handed_out"): booth.staff_handed_out,
         ("orders", "pickup"): booth.staff_pickup,
         ("tags", "cancel"): booth.staff_cancel_tag,
+        ("tags", "reprint"): booth.staff_reprint_tag,
         ("plates", "start"): booth.staff_plate_start,
         ("plates", "delete"): booth.staff_plate_delete,
     }

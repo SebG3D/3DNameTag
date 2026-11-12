@@ -281,7 +281,7 @@ class Booth:
         for p in plates:
             newest[p["color"]] = max(newest.get(p["color"], 0), p["id"])
         for p in plates:
-            full = len(p["tags"]) >= c.plate_max_tags or p["id"] < newest[p["color"]] or p.get("failed")
+            full = len(p["tags"]) >= c.plate_max_tags or p["id"] < newest[p["color"]] or p.get("urgent")
             p["ready_at"] = 0.0 if full else max(0.0, p["first"] + wait_s - now)
         return plates
 
@@ -290,11 +290,12 @@ class Booth:
         plates = []
         for pl in self.db.q("SELECT id, text_color, status FROM plates WHERE status IN ('waiting','failed') "
                             "ORDER BY id"):
-            tags = self.db.q("SELECT id, area_mm2, COALESCE(queued_at, created) AS queued_at FROM tags "
+            tags = self.db.q("SELECT id, area_mm2, reprint, COALESCE(queued_at, created) AS queued_at FROM tags "
                              "WHERE plate_id=? AND status='queued' ORDER BY queued_at, id", pl["id"])
             if tags:
                 plates.append({"id": pl["id"], "color": pl["text_color"], "tags": tags,
-                               "first": min(t["queued_at"] for t in tags), "failed": pl["status"] == "failed"})
+                               "first": min(t["queued_at"] for t in tags),
+                               "urgent": pl["status"] == "failed" or any(t["reprint"] for t in tags)})
         loose: dict[str, list[dict]] = {}              # not planned yet (only between plan() calls)
         for t in self.db.q("SELECT id, text_color, area_mm2, COALESCE(queued_at, created) AS queued_at FROM tags "
                            "WHERE status='queued' AND plate_id IS NULL ORDER BY queued_at, id"):
@@ -520,11 +521,13 @@ class Booth:
                     for x in placed]
         state = {"waiting": "waiting", "failed": "error", "done": "done"}.get(p["status"], "printing")
         return {"id": pid, "state": state, "status": p["status"], "text_color": p["text_color"],
-                "count": len(live), "max": self.cfg.plate_max_tags, "est_s": p["est_s"], "error": p["error"],
+                "count": len(live), "max": self.cfg.plate_max_tags,
+                "est_s": p["est_s"], "error": p["error"],
                 "started": p["started"], "finished": p["finished"], "recommended": pid == recommended,
                 "map": pmap,
                 "tags": [{"id": t["id"], "name": t["name"], "order_number": t["order_number"],
-                          "outline": t["outline"], "text": t["text_svg"]} for t in live]}
+                          "outline": t["outline"], "text": t["text_svg"], "reprint": bool(t["reprint"])}
+                         for t in live]}
 
     def staff_overview(self) -> dict:
         orders = self.db.q("SELECT * FROM orders WHERE status='open' ORDER BY id")
@@ -568,6 +571,23 @@ class Booth:
             self.db.set_order_price(t["order_id"], self.cfg.price_cents(n))
             if n == 0:
                 self.db.cancel_order(t["order_id"])
+            self.plan()
+
+    def staff_reprint_tag(self, tid: int) -> None:
+        """A printed tag came out badly: print it once more. It keeps its old
+        queue time, so its plate is recommended right away."""
+        with self.lock:
+            t = self.db.q1("SELECT * FROM tags WHERE id=?", tid)
+            if not t:
+                raise BoothError("not_found")
+            if t["status"] != "printed":
+                raise BoothError("bad_state", "Nur fertige Anhänger können nochmal gedruckt werden")
+            if not Path(t["stl"]).exists():
+                raise BoothError("bad_state", "Druckdatei ist schon gelöscht (Tag abgeschlossen)")
+            with self.db.tx() as c:
+                c.execute("UPDATE tags SET status='queued', plate_id=NULL, reprint=1 WHERE id=?", (tid,))
+                c.execute("UPDATE orders SET status='open', done_at=NULL WHERE id=? AND status='done'",
+                          (t["order_id"],))
             self.plan()
 
     def staff_cancel_order(self, oid: int) -> None:

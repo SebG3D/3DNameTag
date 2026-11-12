@@ -86,6 +86,8 @@ class DB:
         if "outline" not in tcols:                     # 2D shape (SVG path, mm) for the plate preview
             self.con.execute("ALTER TABLE tags ADD COLUMN outline TEXT NOT NULL DEFAULT ''")
             self.con.execute("ALTER TABLE tags ADD COLUMN text_svg TEXT NOT NULL DEFAULT ''")
+        if "reprint" not in tcols:                     # printed once more (bad print): plate is urgent
+            self.con.execute("ALTER TABLE tags ADD COLUMN reprint INTEGER NOT NULL DEFAULT 0")
         # pay at pickup (2026-11-12): unpaid tags are printed right away
         self.con.execute("UPDATE tags SET status='queued', queued_at=COALESCE(queued_at, created) "
                          "WHERE status='held'")
