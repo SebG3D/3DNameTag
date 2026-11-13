@@ -56,6 +56,13 @@ function Kiosk({ cfg }: { cfg: Config }) {
   useEffect(() => {
     if (s === "attract" && status && status.config_rev !== cfg.rev) window.location.reload();
   }, [s, status, cfg.rev]);
+  // staff pressed 'Kiosk zurücksetzen': drop the half-finished order, start screen
+  const resetSeen = useRef<number | null>(null);
+  useEffect(() => {
+    if (!status) return;
+    if (resetSeen.current !== null && status.kiosk_reset !== resetSeen.current) window.location.reload();
+    resetSeen.current = status.kiosk_reset;
+  }, [status]);
   const step = STEPS.indexOf(s);
   const accent = step >= 0 ? STEP_COLORS[step] : "#1E88E5";
 

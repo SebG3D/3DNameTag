@@ -47,6 +47,15 @@ START_GRACE_S = 90          # printer may report idle this long after upload
 # Time model, refined after every sliced plate (est = overhead + area * k).
 DEFAULT_PLATE_OVERHEAD_S = 35        # fitted to PrusaSlicer estimates, nozzle040s (2026-11-04)
 DEFAULT_S_PER_MM2 = 0.157
+DEFAULT_TAG_AREA_MM2 = 900           # wait estimate before the first real tags
+# Staff can stop ordering (kiosk shows one of these, or their own text).
+CLOSED_MESSAGES = {
+    "pause": "Kurze Pause – gleich geht's weiter!",
+    "printer": "Der Drucker macht gerade Pause. Bitte schau später nochmal vorbei!",
+    "sold_out": "Für heute sind wir ausgebucht. Danke und bis bald!",
+}
+CLOSING_MESSAGE = "Für heute nehmen wir keine Bestellungen mehr an. Danke und bis bald!"
+ORDERING_DEFAULT = {"open": True, "message": "pause", "close_at": None, "show_wait": True}
 
 
 class BoothError(ValueError):
@@ -95,6 +104,7 @@ class Booth:
         self.setup_locked = setup_name is not None          # --setup on the command line wins
         self.setup = load_setup(setup_name or cfg.print_setup)
         self.config_rev = 1                                 # kiosk reloads when this changes
+        self.kiosk_reset = 0                                # staff 'reset kiosk': kiosk reloads when this changes
         self.fonts, self.shapes = load_fonts(), load_shapes()
         self.data = cfg.data_dir
         for d in ("previews", "tags", "plates"):
@@ -235,6 +245,9 @@ class Booth:
             raise BoothError("bad_count")
         if self.queue_full():
             raise BoothError("queue_full")
+        gate = self.ordering_state()
+        if not gate["open"]:
+            raise BoothError("closed", gate["message"])
         colors = {c["id"] for c in self.cfg.text_colors}
         previews = []
         for it in items:
@@ -285,7 +298,7 @@ class Booth:
             p["ready_at"] = 0.0 if full else max(0.0, p["first"] + wait_s - now)
         return plates
 
-    def _pending_plates(self) -> list[dict]:
+    def _pending_plates(self, probe: dict | None = None) -> list[dict]:
         now = self.clock()
         plates = []
         for pl in self.db.q("SELECT id, text_color, status FROM plates WHERE status IN ('waiting','failed') "
@@ -305,6 +318,8 @@ class Booth:
                 chunk = tags[i:i + self.cfg.plate_max_tags]
                 plates.append({"id": 10**9 + len(plates), "color": color, "tags": chunk,
                                "first": chunk[0]["queued_at"]})
+        if probe:                                      # what-if tag for the wait estimate: own new plate
+            plates.append({"id": 2 * 10**9, "color": "", "tags": [probe], "first": now})
         return self._start_order(plates, now)
 
     def recommended_plate(self) -> int | None:
@@ -312,7 +327,7 @@ class Booth:
         ready = [(p["first"], p["id"]) for p in self._pending_plates() if p["ready_at"] <= 0 and p["id"] < 10**9]
         return min(ready)[1] if ready else None
 
-    def forecast(self) -> dict[int, float]:
+    def forecast(self, probe: dict | None = None) -> dict[int, float]:
         """Seconds from now until each queued tag is printed, assuming staff
         start plates as recommended (see _start_order) with the learned time
         model."""
@@ -330,7 +345,7 @@ class Booth:
             done = {x["id"]: t - c.plate_change_min * 60 for x in tags}
         else:
             done = {}
-        plates = self._pending_plates()
+        plates = self._pending_plates(probe)
         while plates:
             start = max(t, min(p["ready_at"] for p in plates))
             nxt = min((p for p in plates if p["ready_at"] <= start), key=lambda p: (p["first"], p["id"]))
@@ -357,9 +372,73 @@ class Booth:
             current = {"id": plate["id"], "names": names, "status": plate["status"],
                        "remaining_min": round((self.last_status.remaining_s or 0) / 60)}
         st = self.last_status.state
+        gate = self.ordering_state()
         return {"printer": st, "current_plate": current,
                 "queue_length": self.open_tag_count(), "queue_full": self.queue_full(),
-                "paused": False, "config_rev": self.config_rev}
+                "ordering": {"open": gate["open"], "reason": gate["reason"], "message": gate["message"]},
+                "wait_min": gate["wait_min"] if gate["show_wait"] else None,
+                "config_rev": self.config_rev, "kiosk_reset": self.kiosk_reset}
+
+    # ------------------------------------------------------------ ordering gate
+    def wait_estimate_s(self) -> float:
+        """How long a child ordering now waits for one tag: a what-if tag on a
+        new plate (worst case: no room on a plate of its colour), with the same
+        safety margin as the pickup time (eta_factor, +2 min)."""
+        avg = self.db.q1("SELECT AVG(area_mm2) AS a FROM (SELECT area_mm2 FROM tags ORDER BY id DESC LIMIT 50)")["a"]
+        probe = {"id": -1, "area_mm2": avg or DEFAULT_TAG_AREA_MM2, "queued_at": self.clock()}
+        return self.forecast(probe).get(-1, 0.0) * self.eta_factor + 120
+
+    def _close_ts(self, hhmm: str) -> float:
+        """Today's timestamp of HH:MM (local time of the booth computer)."""
+        lt = time.localtime(self.clock())
+        h, m = map(int, hhmm.split(":"))
+        return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, h, m, 0, 0, 0, -1))
+
+    def ordering_state(self) -> dict:
+        """Staff controls + what follows from them: open? why not? wait time."""
+        ctl = {**ORDERING_DEFAULT, **self.db.get_state("ordering", {})}
+        wait_s = self.wait_estimate_s()
+        wait_min = int(-(-wait_s // 300) * 5)                     # rounded up to 5 min
+        reason, message, last_order = None, "", None
+        if ctl["close_at"]:
+            close = self._close_ts(ctl["close_at"])
+            last_order = close - wait_s
+            if self.clock() + wait_s > close:
+                reason, message = "closing", CLOSING_MESSAGE
+        if not ctl["open"]:
+            reason = "manual"
+            message = CLOSED_MESSAGES.get(ctl["message"], ctl["message"]) or CLOSED_MESSAGES["pause"]
+        return {**ctl, "open": reason is None, "manual_open": ctl["open"], "reason": reason, "message": message,
+                "wait_s": int(wait_s), "wait_min": wait_min,
+                "last_order": time.strftime("%H:%M", time.localtime(last_order)) if last_order else None}
+
+    def staff_set_ordering(self, d: dict) -> dict:
+        """Partial update: open (bool), message (preset id or own text),
+        close_at ('HH:MM' or null), show_wait (bool)."""
+        ctl = {**ORDERING_DEFAULT, **self.db.get_state("ordering", {})}
+        for k, v in d.items():
+            if k in ("open", "show_wait"):
+                if not isinstance(v, bool):
+                    raise BoothError("bad_value", f"{k}: ja/nein erwartet")
+            elif k == "message":
+                if not isinstance(v, str) or len(v.strip()) > 120:
+                    raise BoothError("bad_value", "Text: max. 120 Zeichen")
+                v = v.strip()
+            elif k == "close_at":
+                if v in ("", None):
+                    v = None
+                elif not isinstance(v, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
+                    raise BoothError("bad_value", "Uhrzeit als HH:MM")
+            else:
+                raise BoothError("bad_value", f"unbekannt: {k}")
+            ctl[k] = v
+        self.db.set_state("ordering", ctl)
+        log.info("ordering: %s", ctl)
+        return self.ordering_state()
+
+    def staff_kiosk_reset(self) -> None:
+        """Kiosk drops a half-finished order and shows the start screen."""
+        self.kiosk_reset += 1
 
     # ------------------------------------------------------------ scheduler
     def _keep_out(self):
@@ -548,6 +627,7 @@ class Booth:
                 "orders": orders, "plates": plates,
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
                 "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day(),
+                "ordering": self.ordering_state(), "closed_messages": CLOSED_MESSAGES,
                 "server_time": time.time()}
 
     def staff_paid(self, oid: int) -> None:

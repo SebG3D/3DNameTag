@@ -43,6 +43,12 @@ in the printer (upload target). The PrusaLink client is tested on the real Core 
 password); results and timings: `docs/hardware-test-2026-11-10.md`. Note: the printer starts a new upload even in
 FINISHED – the "Druckplatte leer?" question when staff press Start is the only guard against printing onto a full bed.
 
+Staff page "🟢 Bestellen an/aus" (header): stop ordering on the kiosk with a preset or own message, a closing
+time ("Annahmeschluss": the kiosk refuses orders whose tags would not be printed by then, using the forecast +
+`eta_factor` margin), show/hide the estimated wait on the kiosk start screen, and "Kiosk zurücksetzen" (kiosk
+reloads to its start screen, dropping a half-finished order). Stored in the DB (`state.ordering`), survives
+restarts; `PUT /api/staff/ordering`, `POST /api/staff/kiosk/reset`.
+
 Staff page "📊 Tag": today's numbers (orders, printed, money, colours), CSV export, backups
 (hourly, `data/backups/`), "Tag abschließen" at the end of the day, clock + shutdown on the Pi.
 

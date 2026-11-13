@@ -24,8 +24,11 @@ export type Status = {
   current_plate: { id: number; names: string[]; status: string; remaining_min: number } | null;
   queue_length: number;
   queue_full: boolean;
-  paused: boolean;
+  /** staff switch / closing time; message = what the kiosk shows when closed */
+  ordering: { open: boolean; reason: "manual" | "closing" | null; message: string };
+  wait_min: number | null;   // null: staff hid the wait time
   config_rev: number;
+  kiosk_reset: number;       // staff pressed 'reset kiosk' when this changes
 };
 
 export type Paths = { outline: string; text: string };

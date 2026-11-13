@@ -1,6 +1,7 @@
 """Booth flow end to end with a fake clock and the simulated printer
 (real OpenSCAD rendering and PrusaSlicer slicing)."""
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -394,3 +395,39 @@ def test_reprint_single_tag(env):
     assert not ov["orders"][0]["ready"]
     start(booth, new)
     assert [t["name"] for t in booth.db.plate(new)["tags"]] == ["B"]
+
+
+def test_ordering_gate_closing_time_and_kiosk_reset(env):
+    booth, _, clock = env
+    st = booth.public_status()
+    assert st["ordering"]["open"] and st["wait_min"] > 0 and st["wait_min"] % 5 == 0
+    # staff stop ordering with a preset; the kiosk shows its text, orders are refused
+    booth.staff_set_ordering({"open": False, "message": "sold_out"})
+    st = booth.public_status()
+    assert not st["ordering"]["open"] and st["ordering"]["reason"] == "manual"
+    assert "ausgebucht" in st["ordering"]["message"]
+    with pytest.raises(BoothError) as e:
+        order(booth, ("A", "baloo", "stadium", "red"))
+    assert e.value.code == "closed"
+    booth.staff_set_ordering({"open": True, "show_wait": False})
+    assert booth.public_status()["wait_min"] is None
+    order(booth, ("A", "baloo", "stadium", "red"))
+    # closing time: closed as soon as a new tag would not be ready by then
+    wait = booth.ordering_state()["wait_s"]
+    hhmm = lambda t: time.strftime("%H:%M", time.localtime(t))          # noqa: E731
+    booth.staff_set_ordering({"close_at": hhmm(clock() + wait + 1200)})
+    s = booth.ordering_state()
+    assert s["open"] and s["last_order"]
+    booth.staff_set_ordering({"close_at": hhmm(clock() + wait - 120)})
+    s = booth.ordering_state()
+    assert not s["open"] and s["reason"] == "closing"
+    with pytest.raises(BoothError):
+        order(booth, ("B", "baloo", "stadium", "red"))
+    booth.staff_set_ordering({"close_at": None})
+    assert booth.ordering_state()["open"]
+    for bad in ({"close_at": "25:00"}, {"open": "yes"}, {"nope": 1}, {"message": "x" * 200}):
+        with pytest.raises(BoothError):
+            booth.staff_set_ordering(bad)
+    r = booth.public_status()["kiosk_reset"]
+    booth.staff_kiosk_reset()
+    assert booth.public_status()["kiosk_reset"] == r + 1

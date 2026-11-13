@@ -47,6 +47,7 @@ export function ReviewScreen({ state, dispatch }: P) {
       dispatch({ type: "ORDER_OK", order: await api.order(items(cart, cur), state.customer) });
     } catch (e) {
       const code = e instanceof ApiError ? e.code : "x";
+      if (code === "closed" && e instanceof ApiError && e.message) { setError(e.message); setBusy(false); return; }
       setError(ERRORS[code] ?? "Das hat leider nicht geklappt. Versuch es nochmal!");
       setBusy(false);
     }

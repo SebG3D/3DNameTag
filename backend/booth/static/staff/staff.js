@@ -270,6 +270,7 @@ function render() {
   $("printerChip").className = "status " + cls;
   $("etaAll").textContent = data.eta_all_s > 0 ? `alles fertig in ca. ${mins(data.eta_all_s)}` : "";
   renderPlates(); renderOrders();
+  if (typeof renderOrderChip === "function") renderOrderChip();
   renderClock();
 }
 

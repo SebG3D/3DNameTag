@@ -148,3 +148,18 @@ table.days td, table.days th { text-align: left; padding: 4px; border-top: 1px s
   .pstate { min-width: 0; font-size: 20px; }
   .pnum, .pcolor, .pcount { font-size: 22px; }
 }
+
+/* ordering button + panel */
+button.ordering { font-size: 26px; padding: 8px 20px; border-radius: 999px; }
+button.ordering.ok { background: #d6f2dc; color: #1d6b2e; }
+button.ordering.bad { background: #fde3e3; color: #a01818; }
+.dialog.wide { width: min(900px, 94vw); max-height: 94vh; overflow-y: auto; }
+.dialog.wide { padding: 24px 36px; }
+.dialog.wide .q { margin-bottom: 8px; }
+.dialog h3 { font-size: 24px; margin: 16px 0 6px; }
+.dialog .stack { display: flex; flex-direction: column; gap: 8px; }
+.dialog .stack button { text-align: left; font-size: 22px; min-height: 0; padding: 10px 18px; }
+.dialog.wide .banner { margin-top: 0; }
+.dialog .row input { flex: 1; min-width: 0; font-size: 26px; }
+.dialog .row input[type=time] { flex: none; }
+button.full { width: 100%; margin-top: 12px; }

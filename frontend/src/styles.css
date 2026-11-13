@@ -43,6 +43,8 @@ h1 { font-size: 36px; margin: 4px 0 0; color: var(--accent); font-weight: 700; t
 .sway { animation: sway 6s ease-in-out infinite; transform-origin: 15% 50%; }
 .pulse { animation: pulse 1.6s ease-in-out infinite; }
 .full-note { font-size: 30px; text-align: center; background: #fff4cc; border-radius: 20px; padding: 22px 30px; }
+.wait-note { font-size: 28px; font-weight: 700; color: #33333f; background: rgba(255,255,255,.75); border-radius: 999px;
+  padding: 8px 26px; }
 .status-line { font-size: 22px; color: #55555f; min-height: 30px; }
 
 /* name + keyboard */

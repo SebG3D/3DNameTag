@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Namensanhänger – Betreuer</title>
-<link rel="stylesheet" href="staff.css?v=4">
+<link rel="stylesheet" href="staff.css?v=5">
 </head>
 <body>
 <div id="login" class="card hidden">
@@ -17,6 +17,7 @@
 <main id="app" class="hidden">
   <header>
     <span id="printerChip" class="status">Drucker …</span>
+    <button id="orderBtn" class="ordering">🛒 …</button>
     <span id="etaAll" class="muted"></span>
     <span class="spacer"></span>
     <button id="statsBtn" class="small" title="Tag / Statistik">📊</button>
@@ -48,6 +49,11 @@
   </div>
 </main>
 
+<!-- ordering controls (kiosk open/closed, closing time, wait time, reset) -->
+<div id="orderPanel" class="overlay hidden">
+  <div class="dialog wide" id="orderPanelBody"></div>
+</div>
+
 <!-- big yes/no question (kids use this page: no tiny browser dialogs) -->
 <div id="modal" class="overlay hidden">
   <div class="dialog">
@@ -62,8 +68,9 @@
 <!-- plate preview, fullscreen; any click closes it -->
 <div id="preview" class="overlay hidden"></div>
 
-<script src="staff.js?v=4"></script>
-<script src="settings.js?v=4"></script>
-<script src="stats.js?v=4"></script>
+<script src="staff.js?v=5"></script>
+<script src="settings.js?v=5"></script>
+<script src="stats.js?v=5"></script>
+<script src="ordering.js?v=5"></script>
 </body>
 </html>

@@ -20,7 +20,9 @@ export function Attract({ status, onStart }: { status: Status | null; onStart: (
   const cfg = useConfig();
   const icons = useIcons();
   const sample = icons[cfg.shapes[0]?.id];
+  const closed = status && !status.ordering.open ? status.ordering.message : null;
   const full = status?.queue_full;
+  const wait = status?.wait_min;
   return (
     <div className="screen attract">
       <div className="event">{cfg.event_name}</div>
@@ -28,10 +30,15 @@ export function Attract({ status, onStart }: { status: Status | null; onStart: (
         {sample && <TagSvg outline={sample.outline} text={sample.text} baseHex={cfg.base_color.hex}
           textHex={colorById(cfg, "red").hex} className="sway" />}
       </div>
-      {full ? (
+      {closed ? (
+        <div className="full-note">{closed}</div>
+      ) : full ? (
         <div className="full-note">Gerade sind ganz viele Anhänger in der Warteschlange.<br />Komm bitte etwas später wieder 🙂</div>
       ) : (
-        <button className="btn btn-go btn-huge pulse" onClick={onStart}>Tippe hier und mach deinen Anhänger!</button>
+        <>
+          <button className="btn btn-go btn-huge pulse" onClick={onStart}>Tippe hier und mach deinen Anhänger!</button>
+          {wait != null && <div className="wait-note">⏱️ Wartezeit gerade ca. {wait} Minuten</div>}
+        </>
       )}
       <div className="status-line">{statusLine(status)}</div>
     </div>

@@ -77,7 +77,7 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
     @app.exception_handler(BoothError)
     async def booth_error(_, e: BoothError):
         return JSONResponse({"error": e.code, "message": str(e)}, status_code=409 if e.code in (
-            "queue_full", "bad_state", "tag_on_plate", "printer_busy") else 400)
+            "queue_full", "closed", "bad_state", "tag_on_plate", "printer_busy") else 400)
 
     def staff(x_staff_token: str = Header(default=""), token: str = Query(default="")):
         t = x_staff_token or token
@@ -141,6 +141,15 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
         if not fn:
             raise HTTPException(404)
         fn(item_id)
+        return {"ok": True}
+
+    @app.put("/api/staff/ordering", dependencies=[Depends(staff)])
+    def set_ordering(req: dict = Body(...)):
+        return booth.staff_set_ordering(req)
+
+    @app.post("/api/staff/kiosk/reset", dependencies=[Depends(staff)])
+    def kiosk_reset():
+        booth.staff_kiosk_reset()
         return {"ok": True}
 
     @app.post("/api/staff/sim/resume", dependencies=[Depends(staff)])
