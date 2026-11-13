@@ -1,14 +1,14 @@
 // Angled touchscreen stand: two printed side brackets + a 6 mm plywood plate.
 //
 //   part = "assembly"  preview with plate and screen (not for printing)
-//   part = "print"     both brackets lying flat on their outer face, no supports
+//   part = "print_left" / "print_right"   one bracket lying flat on its outer face, no supports
 //   part = "left" / "right"   one bracket in assembly orientation
-//   part = "plate2d"   plate cut template (export DXF/SVG), holes + cable slot
+//   part = "plate2d"   plate cut template (export DXF/SVG), holes + screen cutout
 //   part = "base2d"    bottom plate cut template: bracket bolts + Pi 5 holes
 //
 // The plate rests on a ledge along each bracket's sloped edge, sits against
-// a front lip and is held by 2 countersunk M3 bolts per side with captive nuts
-// underneath. Side walls and lip are flush with the plate top, so the screen
+// a front lip and is held by 2 countersunk M3 bolts per side; their nuts sit
+// in slots that open on the bracket's inner face. Side walls and lip are flush with the plate top, so the screen
 // can be as wide as the plate and nothing sticks up at the kids' hands.
 //
 // The brackets stand on a bottom plate (same plywood) and are bolted to it
@@ -18,21 +18,26 @@
 // top of the bottom plate.
 // Plate frame: u along the slope (up), w normal to the plate.
 
-/* [Screen - MEASURE YOUR PANEL] */
-screen_w = 240;        // outer width incl. bezel/case (placeholder for a 10.1")
-screen_h = 160;        // outer height
-screen_t = 12;         // thickness incl. driver board (preview only)
+/* [Screen - Waveshare 13.3inch HDMI LCD (H)] */
+// Glass front with the LCD panel and electronics bonded to its back. The
+// panel drops through a cutout in the plate, the glass rim rests on top of
+// the plate on the factory double-sided tape. No other mounting needed.
+screen_w = 324.57;     // glass front width
+screen_h = 202.97;     // glass front height
+glass_t = 3;           // glass thickness (preview only)
+screen_t = 20;         // depth behind the glass incl. electronics (MEASURE; preview + h0 check)
+overlap_side = 6;      // cutout smaller than the glass, left and right
+overlap_top = 6;       // ... at the top (back edge of the slope)
+overlap_bottom = 10;   // ... at the bottom (front edge, towards the kids)
+window_r = 3;          // corner radius of the window (router bit / jigsaw)
 
 /* [Plate] */
 angle = 30;            // tilt from the table
 plate_t = 6;           // plywood/MDF thickness (measure, often 5.5-6.2)
-side_margin = 2;       // plate wider than the screen, each side
-bottom_margin = 12;    // plate below the screen (front edge zone)
-top_margin = 8;
-cable_w = 70;          // cable slot through the plate (HDMI + USB)
-cable_h = 30;
-cable_x = 0;           // slot centre, from the plate centre
-cable_u = 0.6;         // slot centre, fraction of the plate depth from the front
+glass_gap = 2;         // cutout edge to the bracket ledge under the plate
+min_side_margin = 2;   // plate wider than the glass, each side
+bottom_margin = 12;    // plate in front of the glass (front edge zone)
+top_margin = 8;        // plate behind the glass
 
 /* [Bracket] */
 ledge_w = 20;          // how far the ledge reaches under the plate
@@ -47,7 +52,9 @@ fit = 0.4;             // clearance plate <-> wall/lip
 /* [Hardware] */
 bolt_d = 3.4;          // M3 clearance
 nut_af = 5.7;          // M3 nut across flats + clearance
-nut_depth = 3;
+nut_slot_t = 3;        // slot height for a 2.4 mm M3 nut
+nut_w = 3;             // material between plate underside and nut slot
+bolt_depth = 14;       // bolt hole depth below the plate underside
 bolt_u = [0.18, 0.82]; // bolt positions, fraction of the plate depth
 table_hole_d = 4.5;    // M4 bolts bracket -> bottom plate (nut inside the window)
 
@@ -58,10 +65,12 @@ pi_mount = true;       // drill the Raspberry Pi 5 hole pattern (58 x 49, M2.5)
 pi_hole_d = 2.7;
 pi_back = 15;          // Pi board edge to the back edge of the bottom plate
 
-part = "assembly";     // [assembly, print, left, right, plate2d, base2d]
+part = "assembly";     // [assembly, print_left, print_right, left, right, plate2d, base2d]
 
 $fn = 40;
 
+// the panel behind the glass must clear the ledges, the glass itself may lie over them
+side_margin = max(min_side_margin, ledge_w + glass_gap - overlap_side);
 plate_w = screen_w + 2 * side_margin;
 S = screen_h + bottom_margin + top_margin;   // plate depth along the slope
 
@@ -72,6 +81,7 @@ y_front = R(-lip - fit, -ledge_t)[0];
 y_back = R(S, -ledge_t)[0];
 
 assert(R(-lip - fit, -ledge_t)[1] >= 0, "h0 too small: the lip would go below the table");
+assert(R(bottom_margin + overlap_bottom, plate_t - screen_t)[1] > 3, "h0 too small: the screen would hit the bottom plate");
 assert(y_back - y_front < 245 && R(S, plate_t)[1] < 215, "bracket larger than the Core One bed");
 
 // side profile in (y, z); top_w = top of the profile along the slope
@@ -128,9 +138,15 @@ module bracket() {
         }
         across(-wall + skin, fit + ledge_w + 1) window2d();   // open towards the inside
         for (f = bolt_u) on_plate() translate([bolt_x(), f * S, 0]) {
-            translate([0, 0, -ledge_t - 1]) cylinder(d = bolt_d, h = ledge_t + 2);
-            // captive nut from below, a vertex points along x (= print up)
-            translate([0, 0, -ledge_t - 1]) cylinder(d = nut_af / cos(30), h = nut_depth + 1, $fn = 6);
+            // bolt hole, deep enough for M3x16 (tip 10 mm below the plate underside)
+            translate([0, 0, -bolt_depth]) cylinder(d = bolt_d, h = bolt_depth + 1);
+            // nut slot, the nut slides in from the bracket's inner face; flats
+            // parallel to x so it can't turn. In print orientation x is up, so
+            // the slot is a vertical channel open at the top.
+            translate([0, 0, -nut_w - nut_slot_t]) hull() {
+                cylinder(d = nut_af / cos(30), h = nut_slot_t, $fn = 6);
+                translate([ledge_w, 0, 0]) cylinder(d = nut_af / cos(30), h = nut_slot_t, $fn = 6);
+            }
         }
         // bolts into the bottom plate, inside the window so the nut is reachable
         for (y = base_bolt_y())
@@ -149,8 +165,9 @@ module plate2d() {
         square([plate_w, S]);
         for (x = [bolt_x() - fit, plate_w - bolt_x() + fit], f = bolt_u)
             translate([x, f * S]) circle(d = 3.4);
-        translate([plate_w / 2 + cable_x, cable_u * S]) offset(r = 5) offset(delta = -5)
-            square([cable_w, cable_h], center = true);
+        translate([side_margin + overlap_side, bottom_margin + overlap_bottom])
+            offset(r = window_r) offset(delta = -window_r)
+                square([screen_w - 2 * overlap_side, screen_h - overlap_bottom - overlap_top]);
     }
 }
 
@@ -165,11 +182,10 @@ module base2d() {
 
 if (part == "left") bracket();
 else if (part == "right") right_bracket();
-else if (part == "print") {
-    // outer face on the bed, side by side; the right one is the mirror image
-    flat();
-    translate([10, 0, 0]) mirror([1, 0, 0]) flat();
-}
+// one bracket per print job (about 206 x 131 mm, both don't fit on the bed);
+// turned so the long side runs along X of the Core One (250 x 220)
+else if (part == "print_left") rotate([0, 0, 90]) flat();
+else if (part == "print_right") rotate([0, 0, 90]) mirror([1, 0, 0]) flat();
 else if (part == "plate2d") plate2d();
 else if (part == "base2d") translate([-base_x0, -base_y0]) base2d();   // origin at a corner
 else {
@@ -179,6 +195,11 @@ else {
     if (pi_mount) color("green") translate([pi_origin[0], pi_origin[1], 5]) cube([pi_board[0], pi_board[1], 1.6]);
     on_plate() translate([fit, 0, 0]) {
         color("burlywood") linear_extrude(plate_t) plate2d();
-        color("#333") translate([side_margin, bottom_margin, plate_t]) cube([screen_w, screen_h, screen_t]);
+        translate([side_margin, bottom_margin, plate_t]) {
+            color("#222") cube([screen_w, screen_h, glass_t]);
+            // panel body behind the glass, through the cutout (approximate)
+            color("#555") translate([overlap_side + 1, overlap_bottom + 1, -screen_t])
+                cube([screen_w - 2 * overlap_side - 2, screen_h - overlap_bottom - overlap_top - 2, screen_t]);
+        }
     }
 }
