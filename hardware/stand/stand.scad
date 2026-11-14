@@ -1,4 +1,4 @@
-// Angled touchscreen stand: two printed side brackets + a 6 mm plywood plate.
+// Angled touchscreen stand: two printed side brackets + an 8 mm plywood plate.
 //
 //   part = "assembly"  preview with plate and screen (not for printing)
 //   part = "print_left" / "print_right"   one bracket lying flat on its outer face, no supports
@@ -12,7 +12,7 @@
 // can be as wide as the plate and nothing sticks up at the kids' hands.
 //
 // The brackets stand on a bottom plate (same plywood) and are bolted to it
-// with 2 M4 bolts each; the free space between them can take a Raspberry Pi.
+// with 2 M3x15 countersunk bolts each (nut in a hex pocket inside the window); the free space between them can take a Raspberry Pi.
 //
 // Units mm. Assembly frame: X across, Y from front to back, Z up, Z=0 is the
 // top of the bottom plate.
@@ -33,7 +33,7 @@ window_r = 3;          // corner radius of the window (router bit / jigsaw)
 
 /* [Plate] */
 angle = 30;            // tilt from the table
-plate_t = 6;           // plywood/MDF thickness (measure, often 5.5-6.2)
+plate_t = 8;           // plywood thickness (measured 8 mm)
 glass_gap = 2;         // cutout edge to the bracket ledge under the plate
 min_side_margin = 2;   // plate wider than the glass, each side
 bottom_margin = 12;    // plate in front of the glass (front edge zone)
@@ -54,12 +54,13 @@ bolt_d = 3.4;          // M3 clearance
 nut_af = 5.7;          // M3 nut across flats + clearance
 nut_slot_t = 3;        // slot height for a 2.4 mm M3 nut
 nut_w = 3;             // material between plate underside and nut slot
-bolt_depth = 14;       // bolt hole depth below the plate underside
+bolt_depth = 9;        // bolt hole depth below the plate underside (M3x15 tip at 7)
 bolt_u = [0.18, 0.82]; // bolt positions, fraction of the plate depth
-table_hole_d = 4.5;    // M4 bolts bracket -> bottom plate (nut inside the window)
+table_hole_d = 3.4;    // M3x15 bolts bracket -> bottom plate (nut in a pocket inside the window)
+table_nut_floor = 3;   // material under the nut pocket: 15 - base_t - floor = engagement
 
 /* [Bottom plate] */
-base_t = 6;            // plywood/MDF thickness
+base_t = 8;            // plywood thickness
 base_margin = 0;       // bottom plate larger than the brackets, each side
 pi_mount = true;       // drill the Raspberry Pi 5 hole pattern (58 x 49, M2.5)
 pi_hole_d = 2.7;
@@ -80,6 +81,8 @@ function R(u, w) = [u * cos(angle) - w * sin(angle), h0 + u * sin(angle) + w * c
 y_front = R(-lip - fit, -ledge_t)[0];
 y_back = R(S, -ledge_t)[0];
 
+assert(15 - plate_t >= nut_w + nut_slot_t, "M3x15 too short for plate_t: the screw would not reach through the nut");
+assert(15 - base_t - table_nut_floor >= 2.4 + 0.5, "M3x15 too short for base_t + table_nut_floor");
 assert(R(-lip - fit, -ledge_t)[1] >= 0, "h0 too small: the lip would go below the table");
 assert(R(bottom_margin + overlap_bottom, plate_t - screen_t)[1] > 3, "h0 too small: the screen would hit the bottom plate");
 assert(y_back - y_front < 245 && R(S, plate_t)[1] < 215, "bracket larger than the Core One bed");
@@ -138,7 +141,8 @@ module bracket() {
         }
         across(-wall + skin, fit + ledge_w + 1) window2d();   // open towards the inside
         for (f = bolt_u) on_plate() translate([bolt_x(), f * S, 0]) {
-            // bolt hole, deep enough for M3x16 (tip 10 mm below the plate underside)
+            // bolt hole for M3x15 countersunk: 15 - plate_t = 7 mm below the plate underside,
+            // nut at 3..5.4 mm, so the nut is fully engaged with ~1.6 mm to spare
             translate([0, 0, -bolt_depth]) cylinder(d = bolt_d, h = bolt_depth + 1);
             // nut slot, the nut slides in from the bracket's inner face; flats
             // parallel to x so it can't turn. In print orientation x is up, so
@@ -150,7 +154,14 @@ module bracket() {
         }
         // bolts into the bottom plate, inside the window so the nut is reachable
         for (y = base_bolt_y())
-            translate([base_bolt_x(), y, -1]) cylinder(d = table_hole_d, h = frame + 2);
+            translate([base_bolt_x(), y, 0]) {
+                translate([0, 0, -1]) cylinder(d = table_hole_d, h = frame + 2);
+                // hex nut pocket from the window side, holds the nut while the
+                // screw is driven from below; flats across x, so in print
+                // orientation (x up) the pocket roof is a short flat bridge
+                translate([0, 0, table_nut_floor]) rotate([0, 0, 30])
+                    cylinder(d = nut_af / cos(30), h = frame, $fn = 6);
+            }
     }
 }
 
