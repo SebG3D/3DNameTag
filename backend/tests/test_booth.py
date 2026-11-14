@@ -431,3 +431,21 @@ def test_ordering_gate_closing_time_and_kiosk_reset(env):
     r = booth.public_status()["kiosk_reset"]
     booth.staff_kiosk_reset()
     assert booth.public_status()["kiosk_reset"] == r + 1
+
+
+def test_foreign_job_counts_in_wait(env):
+    """A job the booth did not start (sent from PrusaSlicer) delays our plates."""
+    from booth.printer import PrinterStatus
+    booth, _, _ = env
+    order(booth, ("A", "baloo", "stadium", "red"))
+    booth.plan()
+    free_eta, free_wait = booth.eta_s(), booth.wait_estimate_s()
+    booth.last_status = PrinterStatus("printing", 40.0, 1800)
+    extra = 1800 + booth.cfg.plate_change_min * 60
+    assert booth.foreign_job_s() == extra
+    # the plate can only start once the bed is free (its fill-up wait overlaps the job)
+    assert booth.eta_s() > free_eta and booth.eta_s() > extra
+    assert booth.wait_estimate_s() > free_wait
+    assert booth.staff_overview()["printer"]["foreign_job"]
+    booth.last_status = PrinterStatus("busy")              # busy without a job: no delay
+    assert booth.foreign_job_s() == 0

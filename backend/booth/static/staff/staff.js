@@ -140,7 +140,16 @@ function showPreview(id) {
 $("preview").onclick = () => $("preview").classList.add("hidden");
 
 // ---------------------------------------------------------------- plates
-const busy = () => data.plates.some((p) => p.state === "printing");
+const busy = () => data.printer.foreign_job || data.plates.some((p) => p.state === "printing");
+
+// a job the booth did not start (e.g. sent from PrusaSlicer): plates must wait for it
+function foreignBanner() {
+  const st = data.printer;
+  if (!st.foreign_job) return "";
+  const left = st.remaining_s ? ` · noch ${mins(st.remaining_s)}` : "";
+  return `<div class="banner att">🖨️ Fremder Druck läuft${left} – danach Platte abräumen</div>
+    <div class="note">Die Wartezeit ist schon eingerechnet.</div>`;
+}
 
 function plateRow(p) {
   const [icon, word, cls] = PLATE[p.state];
@@ -182,8 +191,8 @@ function plateRow(p) {
 }
 
 function renderPlates() {
-  $("plates").innerHTML = data.plates.map(plateRow).join("") ||
-    `<p class="empty">Noch keine Platten. Sie kommen, sobald jemand bestellt.</p>`;
+  $("plates").innerHTML = foreignBanner() + (data.plates.map(plateRow).join("") ||
+    `<p class="empty">Noch keine Platten. Sie kommen, sobald jemand bestellt.</p>`);
 }
 
 function startPlate(p) {

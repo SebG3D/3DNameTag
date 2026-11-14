@@ -345,6 +345,7 @@ class Booth:
             done = {x["id"]: t - c.plate_change_min * 60 for x in tags}
         else:
             done = {}
+            t += self.foreign_job_s()
         plates = self._pending_plates(probe)
         while plates:
             start = max(t, min(p["ready_at"] for p in plates))
@@ -357,6 +358,17 @@ class Booth:
                 done[x["id"]] = t
             t += c.plate_change_min * 60
         return done
+
+    def foreign_job_s(self) -> float:
+        """Time until a job the booth did not start (e.g. a print sent from
+        PrusaSlicer before the booth opened) is off the bed: the printer's own
+        remaining time + the plate change. 0 when the printer is free."""
+        st = self.last_status
+        if self.db.active_plate() or st.state not in ("printing", "paused", "attention", "busy"):
+            return 0.0
+        if st.state == "busy" and not st.remaining_s:
+            return 0.0                      # busy without a job (e.g. homing from the menu)
+        return (st.remaining_s or 0) + self.cfg.plate_change_min * 60
 
     def eta_s(self, tag_ids: list[int] | None = None) -> float:
         """Time until the given tags (default: all queued) are printed."""
@@ -623,7 +635,8 @@ class Booth:
         plates.sort(key=lambda p: (rank[p["state"]], -p["id"] if p["state"] == "done" else p["id"]))
         st = self.last_status
         return {"printer": {"kind": self.printer.kind, "state": st.state, "progress": round(st.progress, 1),
-                            "remaining_s": st.remaining_s, "message": st.message},
+                            "remaining_s": st.remaining_s, "message": st.message,
+                            "foreign_job": self.foreign_job_s() > 0},
                 "orders": orders, "plates": plates,
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
                 "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day(),
