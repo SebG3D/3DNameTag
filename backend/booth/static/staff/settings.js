@@ -62,6 +62,17 @@ function renderSettings() {
     </div>
   </section>
 
+  <section class="card"><h2>🧾 Kasse – Artikel</h2>
+    <div class="field"><span>Was wir außer Anhängern verkaufen (Symbol, Name, Preis €)</span>
+      ${(d.shop_items || []).map((it, i) => `<div class="colorrow">
+        <input type="text" class="emoji" data-semoji="${i}" value="${esc(it.emoji || "")}" maxlength="8" placeholder="🛍️">
+        <input type="text" data-sname="${i}" value="${esc(it.name)}" maxlength="20" placeholder="Name">
+        <input type="number" class="price" step="0.10" min="0" data-sprice="${i}" value="${(it.price_cents / 100).toFixed(2)}">
+        <button class="danger small" data-delitem="${i}">✕</button></div>`).join("")}
+      <small>Preis 0 = wird an der Kasse gefragt (z. B. Sonstiges).</small>
+      <button class="small" id="addItem">+ Artikel</button></div>
+  </section>
+
   <section class="card"><h2>Druckplatten</h2>
     <div class="grid2">
       ${field("Max. Anhänger pro Platte", num("plate.max_tags", d.plate.max_tags, 'min="1" max="40"'), "was nicht auf die Platte passt, kommt auf die nächste")}
@@ -123,6 +134,10 @@ function renderSettings() {
     S.settings.text_colors.push({ id: slug("neu", taken), name: "", hex: "#888888", _new: true }); renderSettings(); };
   document.querySelectorAll("[data-delcolor]").forEach((b) => b.onclick = () => {
     collect(); S.settings.text_colors.splice(+b.dataset.delcolor, 1); renderSettings(); });
+  $("addItem").onclick = () => { collect(); S.settings.shop_items.push({ id: "", name: "", emoji: "", price_cents: 0 });
+    renderSettings(); };
+  document.querySelectorAll("[data-delitem]").forEach((b) => b.onclick = () => {
+    collect(); S.settings.shop_items.splice(+b.dataset.delitem, 1); renderSettings(); });
   $("testPrinter").onclick = testPrinter;
 }
 
@@ -152,6 +167,14 @@ function collect() {
     return c._new ? { id, name, hex, off, _new: true } : { id, name, hex, off };
   });
   d.pricing.price_per_extra_cents = Math.round(Number($("priceEuro").value) * 100);
+  const itemIds = new Set();
+  d.shop_items = (d.shop_items || []).map((it, i) => {
+    const name = document.querySelector(`[data-sname="${i}"]`).value.trim();
+    const id = it.id || slug(name || "artikel", new Set([...itemIds, ...d.shop_items.map((x) => x.id).filter(Boolean)]));
+    itemIds.add(id);
+    return { id, name, emoji: document.querySelector(`[data-semoji="${i}"]`).value.trim(),
+      price_cents: Math.round(Number(document.querySelector(`[data-sprice="${i}"]`).value || 0) * 100) };
+  });
   d.disabled_fonts = [...document.querySelectorAll("[data-font]")].filter((x) => !x.checked).map((x) => x.dataset.font);
   d.disabled_shapes = [...document.querySelectorAll("[data-shape]")].filter((x) => !x.checked).map((x) => x.dataset.shape);
   d.kiosk.sound = $("sound").checked;
@@ -195,15 +218,6 @@ async function testPrinter() {
   } catch (e) { $("testMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 
-function showSettings(on) {
-  if (on) showStats(false);
-  $("settingsView").classList.toggle("hidden", !on);
-  $("overview").classList.toggle("hidden", on);
-  $("settingsBtn").classList.toggle("primary", on);
-  if (on) loadSettings().catch((e) => { if (e.message !== "login") $("settingsMsg").textContent = e.message; });
-  window.scrollTo(0, 0);
-}
-
-$("settingsBtn").onclick = () => showSettings($("settingsView").classList.contains("hidden"));
-$("settingsCancel").onclick = () => showSettings(false);
+tabEnter.settings = () => loadSettings().catch((e) => { if (e.message !== "login") $("settingsMsg").textContent = e.message; });
+$("settingsCancel").onclick = () => showTab("print");
 $("settingsSave").onclick = saveSettings;

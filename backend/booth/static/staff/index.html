@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Namensanhänger – Betreuer</title>
-<link rel="stylesheet" href="staff.css?v=5">
+<link rel="stylesheet" href="staff.css?v=6">
 </head>
 <body>
 <div id="login" class="card hidden">
@@ -16,12 +16,16 @@
 
 <main id="app" class="hidden">
   <header>
+    <nav class="tabs">
+      <button data-tab="print" class="primary" title="3D-Druck">🖨️</button>
+      <button data-tab="kasse" title="Kasse">🧾</button>
+      <button data-tab="stats" title="Tag / Statistik">📊</button>
+      <button data-tab="settings" title="Einstellungen">⚙️</button>
+    </nav>
     <span id="printerChip" class="status">Drucker …</span>
     <button id="orderBtn" class="ordering">🛒 …</button>
     <span id="etaAll" class="muted"></span>
     <span class="spacer"></span>
-    <button id="statsBtn" class="small" title="Tag / Statistik">📊</button>
-    <button id="settingsBtn" class="small" title="Einstellungen">⚙️</button>
     <a href="/kiosk/" class="small kiosk-link" title="Zum Kiosk">Kiosk</a>
   </header>
   <div id="clockBanner" class="banner bad hidden"></div>
@@ -36,6 +40,14 @@
   </div>
 
   <div id="statsView" class="narrow hidden"></div>
+
+  <div id="kasseView" class="hidden">
+    <section class="col">
+      <h2>🧾 Kasse</h2>
+      <div id="shopItems" class="shop-items"></div>
+    </section>
+    <section class="col receipt" id="receipt"></section>
+  </div>
 
   <div id="overview">
     <section class="col">
@@ -65,12 +77,31 @@
   </div>
 </div>
 
+<!-- Kasse: number pad for prices and money given (in cents: 2 5 0 = 2,50 €) -->
+<div id="keypad" class="overlay hidden">
+  <div class="dialog keypad">
+    <p class="q" id="keypadTitle"></p>
+    <div id="keypadValue" class="keypad-value"></div>
+    <div class="keys">
+      <button class="big" data-key="7">7</button><button class="big" data-key="8">8</button><button class="big" data-key="9">9</button>
+      <button class="big" data-key="4">4</button><button class="big" data-key="5">5</button><button class="big" data-key="6">6</button>
+      <button class="big" data-key="1">1</button><button class="big" data-key="2">2</button><button class="big" data-key="3">3</button>
+      <button class="big" data-key="00">00</button><button class="big" data-key="0">0</button><button class="big" data-key="back">⌫</button>
+    </div>
+    <div class="dialog-buttons">
+      <button class="big" data-key="no">✕ Abbrechen</button>
+      <button class="big primary" data-key="ok">✓ OK</button>
+    </div>
+  </div>
+</div>
+
 <!-- plate preview, fullscreen; any click closes it -->
 <div id="preview" class="overlay hidden"></div>
 
-<script src="staff.js?v=5"></script>
-<script src="settings.js?v=5"></script>
-<script src="stats.js?v=5"></script>
-<script src="ordering.js?v=5"></script>
+<script src="staff.js?v=6"></script>
+<script src="settings.js?v=6"></script>
+<script src="stats.js?v=6"></script>
+<script src="ordering.js?v=6"></script>
+<script src="kasse.js?v=6"></script>
 </body>
 </html>

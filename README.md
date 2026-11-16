@@ -49,7 +49,15 @@ time ("Annahmeschluss": the kiosk refuses orders whose tags would not be printed
 reloads to its start screen, dropping a half-finished order). Stored in the DB (`state.ordering`), survives
 restarts; `PUT /api/staff/ordering`, `POST /api/staff/kiosk/reset`.
 
-Staff page "📊 Tag": today's numbers (orders, printed, money, colours), CSV export, backups
+Staff page tabs (top left): 🖨️ plates + pickup (default), 🧾 Kasse, 📊 Tag, ⚙️ Einstellungen.
+
+Staff page "🧾 Kasse": sell the other things on the stand (`shop_items` in booth.json, edited under
+⚙️ "Kasse – Artikel"; price 0 = asked with a number pad, e.g. Sonstiges). The 🧾 button on a pickup order opens
+the Kasse with that order's unpaid tag price on the receipt. Money given (5/10/20/50 €, exact, keypad) shows the
+change. "✓ Bezahlt" → `POST /api/staff/sales` stores the sale (`sales` + `sale_items`), marks the order paid, and
+picks it up if all its tags are printed. Item money counts in 📊 "kassiert" and the CSV.
+
+Staff page "📊 Tag": today's numbers (orders, printed, money, colours, Kasse items), CSV export, backups
 (hourly, `data/backups/`), "Tag abschließen" at the end of the day, clock + shutdown on the Pi.
 
 Flow: order → all tags queued at once (extra tags are paid at pickup) → each tag goes onto a waiting plate of

@@ -479,3 +479,65 @@ def test_foreign_job_counts_in_wait(env):
     assert booth.staff_overview()["printer"]["foreign_job"]
     booth.last_status = PrinterStatus("busy")              # busy without a job: no delay
     assert booth.foreign_job_s() == 0
+
+
+def test_kasse_sales(env):
+    booth, printer, clock = env
+    assert [i["id"] for i in booth.staff_overview()["shop_items"]][:2] == ["plaetzchen", "pokemon"]
+    booth.cfg.shop_items = [{"id": "drache", "name": "Drache", "emoji": "🐉", "price_cents": 450},
+                            {"id": "sonstiges", "name": "Sonstiges", "emoji": "", "price_cents": 0}]
+    # items only; the client price of a fixed-price item is ignored
+    r = booth.staff_sale({"items": [{"id": "drache", "qty": 2, "price_cents": 1},
+                                    {"id": "sonstiges", "price_cents": 250, "label": "Schlüsselanhänger"}],
+                          "given_cents": 2000})
+    assert r["total_cents"] == 1150 and r["change_cents"] == 850
+    for bad in [{"items": [{"id": "nope"}], "given_cents": 1000},
+                {"items": [{"id": "drache"}], "given_cents": 100},
+                {"items": [{"id": "sonstiges"}], "given_cents": 1000},
+                {"items": [], "given_cents": 0}]:
+        with pytest.raises(BoothError):
+            booth.staff_sale(bad)
+    # unready order: paid, stays open
+    o1 = order(booth, ("A", "baloo", "stadium", "red"), ("B", "baloo", "stadium", "red"))
+    r = booth.staff_sale({"order_id": o1["order_id"], "items": [{"id": "drache"}], "given_cents": 1000})
+    assert r["total_cents"] == 650 and r["picked_up"] is False
+    o = booth.db.order(o1["order_id"])
+    assert o["paid"] == 1 and o["status"] == "open"
+    # ready order: paid + picked up; already paid -> no tag money again
+    pid = plate_of(booth, o["tags"][0]["id"])
+    start(booth, pid)
+    run_until(booth, clock, lambda: booth.db.plate(pid)["status"] == "color_change")
+    printer.resume()
+    run_until(booth, clock, lambda: booth.db.plate(pid)["status"] == "done")
+    r = booth.staff_sale({"order_id": o1["order_id"], "items": [], "given_cents": 0})
+    assert r["total_cents"] == 0 and r["picked_up"] is True
+    assert booth.db.order(o1["order_id"])["status"] == "done"
+    with pytest.raises(BoothError):                         # not open any more
+        booth.staff_sale({"order_id": o1["order_id"], "items": [{"id": "drache"}], "given_cents": 1000})
+    st = booth.stats()
+    assert st["items_cents"] == 1600 and st["items_sold"] == {"Drache": 3, "Sonstiges: Schlüsselanhänger": 1}
+    assert st["paid_cents"] == 1600 + 200 and st["tags_paid_cents"] == 200
+    csv = booth.export_csv(booth._day())
+    assert "Schlüsselanhänger" in csv and "9,00" in csv
+
+
+def test_shop_items_config(tmp_path):
+    import json
+    from booth.config import CONFIG, DEFAULT_SHOP_ITEMS, ConfigError, config_dict, parse_config
+    c = json.loads(CONFIG.read_text())
+    c.pop("shop_items", None)
+    cfg = parse_config(c)
+    assert cfg.shop_items == DEFAULT_SHOP_ITEMS and config_dict(cfg)["shop_items"] == DEFAULT_SHOP_ITEMS
+    c["shop_items"] = [{"id": "a", "name": "A", "price_cents": 100}, {"id": "a", "name": "B", "price_cents": 1}]
+    with pytest.raises(ConfigError):
+        parse_config(c)
+
+
+def test_shop_items_settings(cfg_env):
+    import json
+    booth, path = cfg_env
+    d = booth.staff_settings()["settings"]
+    d["shop_items"] = [{"id": "drache", "name": "Drache", "emoji": "🐉", "price_cents": 450}]
+    booth.staff_update_settings(d)
+    assert booth.staff_overview()["shop_items"][0]["price_cents"] == 450
+    assert json.loads(path.read_text())["shop_items"][0]["price_cents"] == 450

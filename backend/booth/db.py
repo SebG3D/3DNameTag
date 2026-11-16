@@ -62,6 +62,25 @@ CREATE TABLE IF NOT EXISTS plates (
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS tags_status ON tags(status);
+CREATE TABLE IF NOT EXISTS sales (               -- Kasse: one checkout (other items, maybe a tag order)
+    id INTEGER PRIMARY KEY,
+    day TEXT NOT NULL,
+    created REAL NOT NULL,
+    order_id INTEGER REFERENCES orders(id),   -- tag order paid with it (NULL = items only)
+    tags_cents INTEGER NOT NULL,              -- tag money of that order taken here (0 if paid before)
+    items_cents INTEGER NOT NULL,
+    total_cents INTEGER NOT NULL,
+    given_cents INTEGER NOT NULL,
+    change_cents INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sale_items (
+    id INTEGER PRIMARY KEY,
+    sale_id INTEGER NOT NULL REFERENCES sales(id),
+    item_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    price_cents INTEGER NOT NULL,
+    qty INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
@@ -158,6 +177,23 @@ class DB:
     def mark_paid(self, oid: int) -> None:
         with self.tx() as c:
             c.execute("UPDATE orders SET paid=1 WHERE id=?", (oid,))
+
+    def create_sale(self, day: str, now: float, order_id: int | None, tags_cents: int, items: list[dict],
+                    given_cents: int) -> dict:
+        """items: dicts with item_id, name, price_cents, qty. Marks the order paid in the same step."""
+        items_cents = sum(i["price_cents"] * i["qty"] for i in items)
+        total = tags_cents + items_cents
+        with self.tx() as c:
+            sid = c.execute("INSERT INTO sales(day, created, order_id, tags_cents, items_cents, total_cents,"
+                            " given_cents, change_cents) VALUES(?,?,?,?,?,?,?,?)",
+                            (day, now, order_id, tags_cents, items_cents, total, given_cents,
+                             given_cents - total)).lastrowid
+            for i in items:
+                c.execute("INSERT INTO sale_items(sale_id, item_id, name, price_cents, qty) VALUES(?,?,?,?,?)",
+                          (sid, i["item_id"], i["name"], i["price_cents"], i["qty"]))
+            if order_id is not None:
+                c.execute("UPDATE orders SET paid=1 WHERE id=?", (order_id,))
+        return {"sale_id": sid, "total_cents": total, "change_cents": given_cents - total}
 
     def cancel_tag(self, tid: int) -> None:
         """Only tags not printing yet (leaves their waiting plate); the order

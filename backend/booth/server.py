@@ -143,6 +143,10 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
         fn(item_id)
         return {"ok": True}
 
+    @app.post("/api/staff/sales", dependencies=[Depends(staff)])
+    def sale(req: dict = Body(...)):
+        return booth.staff_sale(req)
+
     @app.put("/api/staff/ordering", dependencies=[Depends(staff)])
     def set_ordering(req: dict = Body(...)):
         return booth.staff_set_ordering(req)

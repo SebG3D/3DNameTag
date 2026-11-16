@@ -1,5 +1,5 @@
 {
-  "_comment": "Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). Prices in euro cents. Printer: type sim | prusalink. print_setup: null = 'active' from print.json.",
+  "_comment": "Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till). Printer: type sim | prusalink. print_setup: null = 'active' from print.json.",
   "event_name": "Weihnachtsmarkt 2026",
   "base_color": {
     "name": "Blau",
@@ -51,6 +51,38 @@
   "disabled_fonts": [],
   "disabled_shapes": [],
   "print_setup": null,
+  "shop_items": [
+    {
+      "id": "plaetzchen",
+      "name": "Plätzchenform",
+      "emoji": "🍪",
+      "price_cents": 300
+    },
+    {
+      "id": "pokemon",
+      "name": "Pokemon",
+      "emoji": "⚡",
+      "price_cents": 300
+    },
+    {
+      "id": "drache",
+      "name": "Drache",
+      "emoji": "🐉",
+      "price_cents": 300
+    },
+    {
+      "id": "schlange",
+      "name": "Schlange",
+      "emoji": "🐍",
+      "price_cents": 300
+    },
+    {
+      "id": "sonstiges",
+      "name": "Sonstiges",
+      "emoji": "🛍️",
+      "price_cents": 0
+    }
+  ],
   "staff_pin": "2468",
   "printer": {
     "type": "sim",

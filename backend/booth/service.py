@@ -32,7 +32,7 @@ from nametag.setup import list_setups, load_setup
 from nametag.shapes import load_shapes
 from nametag.slicer import slice_plate
 
-from .config import BoothConfig, ConfigError, config_dict, parse_config, save_config
+from .config import SHOP_MAX_CENTS, BoothConfig, ConfigError, config_dict, parse_config, save_config
 from .db import DB
 from .printer import Printer, PrinterStatus, SimPrinter, make_printer
 
@@ -663,6 +663,7 @@ class Booth:
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
                 "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day(),
                 "ordering": self.ordering_state(), "closed_messages": CLOSED_MESSAGES,
+                "shop_items": self.cfg.shop_items,
                 "server_time": time.time()}
 
     def staff_paid(self, oid: int) -> None:
@@ -672,6 +673,54 @@ class Booth:
         """Handed out at the stand; the money (if any) was taken then."""
         self.db.mark_paid(oid)
         self.db.order_done(oid, self.clock())
+
+    def staff_sale(self, req: dict) -> dict:
+        """Kasse checkout: other items (prices from the config, 'price asked' items
+        bring their own) plus maybe one tag order. The order is marked paid; if its
+        tags are all printed it is picked up as well."""
+        def cents(v, lo, hi, what):
+            if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+                raise BoothError("bad_sale", what)
+            return v
+        known = {i["id"]: i for i in self.cfg.shop_items}
+        raw = req.get("items") or []
+        if not isinstance(raw, list) or len(raw) > 50:
+            raise BoothError("bad_sale", "Artikel ungültig")
+        items = []
+        for it in raw:
+            it = it if isinstance(it, dict) else {}
+            k = known.get(it.get("id"))
+            if not k:
+                raise BoothError("bad_sale", "Unbekannter Artikel")
+            qty = cents(it.get("qty", 1), 1, 99, "Anzahl 1..99")
+            if k["price_cents"] > 0:
+                price, name = k["price_cents"], k["name"]
+            else:
+                price = cents(it.get("price_cents"), 1, SHOP_MAX_CENTS, f"{k['name']}: Preis fehlt")
+                label = str(it.get("label") or "").strip()[:30]
+                name = f"{k['name']}: {label}" if label else k["name"]
+            items.append({"item_id": k["id"], "name": name, "price_cents": price, "qty": qty})
+        oid, tags_cents = req.get("order_id"), 0
+        with self.lock:
+            if oid is not None:
+                o = self.db.q1("SELECT * FROM orders WHERE id=?", oid) if isinstance(oid, int) else None
+                if not o or o["status"] != "open":
+                    raise BoothError("bad_sale", "Bestellung ist nicht mehr offen")
+                tags_cents = 0 if o["paid"] else o["price_cents"]
+            if not items and oid is None:
+                raise BoothError("bad_sale", "Nichts in der Kasse")
+            total = tags_cents + sum(i["price_cents"] * i["qty"] for i in items)
+            given = cents(req.get("given_cents", total), 0, 10 * SHOP_MAX_CENTS, "Gegeben ungültig")
+            if given < total:
+                raise BoothError("bad_sale", "Zu wenig Geld gegeben")
+            now = self.clock()
+            res = self.db.create_sale(self._day(now), now, oid, tags_cents, items, given)
+            if oid is not None:
+                live = [t for t in self.db.order(oid)["tags"] if t["status"] != "cancelled"]
+                res["picked_up"] = bool(live) and all(t["status"] == "printed" for t in live)
+                if res["picked_up"]:
+                    self.db.order_done(oid, now)
+        return res
 
     def staff_cancel_tag(self, tid: int) -> None:
         t = self.db.q1("SELECT * FROM tags WHERE id=?", tid)
@@ -896,7 +945,12 @@ class Booth:
             "SELECT status, COUNT(*) AS n FROM plates WHERE created>=? AND created<? GROUP BY status", lo, hi)}
         print_s = q1("SELECT COALESCE(SUM(finished - started), 0) AS s FROM plates "
                      "WHERE status IN ('printed','done','archived') AND created>=? AND created<?", lo, hi)["s"]
-        return {"day": day, "orders": orders["n"], "paid_cents": orders["paid_cents"],
+        items = q("SELECT si.name, SUM(si.qty) AS n, SUM(si.qty * si.price_cents) AS cents FROM sale_items si "
+                  "JOIN sales s ON s.id=si.sale_id WHERE s.day=? GROUP BY si.name ORDER BY n DESC", day)
+        items_cents = sum(r["cents"] for r in items)
+        return {"day": day, "orders": orders["n"], "paid_cents": orders["paid_cents"] + items_cents,
+                "tags_paid_cents": orders["paid_cents"], "items_cents": items_cents,
+                "items_sold": {r["name"]: r["n"] for r in items},
                 "due_cents": orders["due_cents"],
                 "tags_printed": tags.get("printed", 0),
                 "tags_open": sum(tags.get(k, 0) for k in ("held", "queued", "plated")),
@@ -910,7 +964,8 @@ class Booth:
                 "wait_avg_min": round((wait["avg_s"] or 0) / 60), "wait_max_min": round((wait["max_s"] or 0) / 60)}
 
     def staff_stats(self) -> dict:
-        days = [r["day"] for r in self.db.q("SELECT DISTINCT day FROM orders ORDER BY day DESC LIMIT 7")]
+        days = [r["day"] for r in self.db.q("SELECT day FROM orders UNION SELECT day FROM sales "
+                                            "ORDER BY day DESC LIMIT 7")]
         today = self._day()
         return {"today": self.stats(today),
                 "days": [self.stats(d) for d in days if d != today],
@@ -1014,6 +1069,19 @@ class Booth:
             w.writerow([r["day"], r["number"], r["customer"], r["order_status"], r["paid"],
                         f"{r['price_cents'] / 100:.2f}".replace(".", ","), r["idx"], r["name"], r["font"],
                         r["shape"], r["text_color"], r["free"], r["tag_status"], r["plate_id"] or "", r["created"]])
+        sold = self.db.q(
+            "SELECT s.day, o.number, o.customer, si.name, si.qty, si.price_cents, "
+            "datetime(s.created, 'unixepoch', 'localtime') AS created "
+            "FROM sale_items si JOIN sales s ON s.id=si.sale_id LEFT JOIN orders o ON o.id=s.order_id " +
+            ("WHERE s.day=? " if day else "") + "ORDER BY s.id, si.id", *([day] if day else []))
+        if sold:                                       # Kasse: other items, same columns where they fit
+            w.writerow([])
+            w.writerow(["Tag", "Nummer", "Kunde", "Kasse", "bezahlt", "Preis (EUR)", "Anzahl", "Artikel", "", "",
+                        "", "", "", "", "Zeit"])
+            for r in sold:
+                w.writerow([r["day"], r["number"] or "", r["customer"] or "", "Kasse", 1,
+                            f"{r['price_cents'] * r['qty'] / 100:.2f}".replace(".", ","), r["qty"], r["name"],
+                            "", "", "", "", "", "", r["created"]])
         return out.getvalue()
 
     def plate_gcode(self, pid: int) -> Path:

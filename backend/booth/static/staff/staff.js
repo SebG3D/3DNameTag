@@ -249,6 +249,7 @@ function renderOrders() {
         ${o.day !== data.today ? `<span class="chip">${esc(o.day.slice(8))}.${esc(o.day.slice(5, 7))}.</span>` : ""}
         <span class="spacer"></span>
         ${due ? `<button class="money" data-paid="${o.id}" title="Schon bezahlt">💶 ${euro(o.price_cents)}</button>` : ""}
+        <button class="big icon" data-kasse="${o.id}" title="Zur Kasse (mit anderen Sachen)">🧾</button>
         ${o.ready ? `<button class="big primary" data-pickup="${o.id}">🎁 Abgeholt</button>` : ""}
         <button class="big icon danger" data-cancel="${o.id}" title="Stornieren">🗑️</button>
       </div>
@@ -260,7 +261,9 @@ function renderOrders() {
 $("orders").addEventListener("click", (e) => {
   const el = e.target.closest("button");
   if (!el) return;
-  const o = data.orders.find((x) => x.id === Number(el.dataset.pickup || el.dataset.paid || el.dataset.cancel));
+  const o = data.orders.find((x) => x.id === Number(el.dataset.pickup || el.dataset.paid || el.dataset.cancel ||
+    el.dataset.kasse));
+  if (el.dataset.kasse) return kasseStart(o);
   const who = o ? `#${o.number}${o.customer ? " " + esc(o.customer) : ""}` : "";
   if (el.dataset.pickup) {
     const due = !o.paid && o.price_cents > 0;
@@ -282,6 +285,21 @@ $("orders").addEventListener("click", (e) => {
   }
 });
 
+// ---------------------------------------------------------------- tabs
+// 🖨️ print (plates + pickup, default) · 🧾 Kasse · 📊 day · ⚙️ settings; each tab has its own button
+const TABS = { print: "overview", kasse: "kasseView", stats: "statsView", settings: "settingsView" };
+const tabEnter = {};                      // name -> function run when the tab opens (other scripts add theirs)
+let tab = "print";
+
+function showTab(name) {
+  tab = name;
+  for (const [t, view] of Object.entries(TABS)) $(view).classList.toggle("hidden", t !== name);
+  document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("primary", b.dataset.tab === name));
+  if (tabEnter[name]) tabEnter[name]();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { if (b.dataset.tab !== tab) showTab(b.dataset.tab); });
+
 // ---------------------------------------------------------------- page
 function render() {
   const [txt, cls, icon] = PRINTER[data.printer.state] || [data.printer.state, "", "❔"];
@@ -290,6 +308,7 @@ function render() {
   $("etaAll").textContent = data.eta_all_s > 0 ? `alles fertig in ca. ${mins(data.eta_all_s)}` : "";
   renderPlates(); renderOrders();
   if (typeof renderOrderChip === "function") renderOrderChip();
+  if (typeof renderKasse === "function" && tab === "kasse") renderKasse();
   renderClock();
 }
 

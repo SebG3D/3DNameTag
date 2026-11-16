@@ -13,9 +13,19 @@ from nametag import REPO
 
 CONFIG = REPO / "config" / "booth.json"
 COMMENT = ("Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). "
-           "Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). Printer: type sim | prusalink. print_setup: null = 'active' from print.json.")
+           "Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). "
+           "shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till). Printer: type sim | prusalink. print_setup: null = 'active' from print.json.")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _ID = re.compile(r"^[a-z0-9_-]{1,20}$")
+SHOP_MAX_CENTS = 100000
+# start values when booth.json has no shop_items yet (prices are placeholders, staff set them)
+DEFAULT_SHOP_ITEMS = [
+    {"id": "plaetzchen", "name": "Plätzchenform", "emoji": "🍪", "price_cents": 300},
+    {"id": "pokemon", "name": "Pokemon", "emoji": "⚡", "price_cents": 300},
+    {"id": "drache", "name": "Drache", "emoji": "🐉", "price_cents": 300},
+    {"id": "schlange", "name": "Schlange", "emoji": "🐍", "price_cents": 300},
+    {"id": "sonstiges", "name": "Sonstiges", "emoji": "🛍️", "price_cents": 0},
+]
 
 
 @dataclass
@@ -39,6 +49,7 @@ class BoothConfig:
     kiosk_idle_s: int = 90
     kiosk_sound: bool = True
     print_setup: str | None = None
+    shop_items: list[dict] = field(default_factory=lambda: [dict(i) for i in DEFAULT_SHOP_ITEMS])
     data_dir: Path = field(default_factory=lambda: REPO / "backend" / "data")
     path: Path | None = None         # file it was loaded from (save target)
     file_pin: str | None = None      # set when BOOTH_PIN overrides the file PIN (kept in the file)
@@ -91,6 +102,26 @@ def _color(c, what: str) -> dict:
     return {"name": name.strip(), "hex": c["hex"].upper()}
 
 
+def _shop_items(items) -> list[dict]:
+    if not isinstance(items, list) or len(items) > 30:
+        raise ConfigError("shop_items: Liste erwartet (max. 30)")
+    out = []
+    for it in items:
+        if not isinstance(it, dict):
+            raise ConfigError("Kasse-Artikel: ungültig")
+        name = _str(it, "name", 20)
+        if not _ID.match(str(it.get("id", ""))):
+            raise ConfigError(f"Kasse-Artikel {name}: ungültige id")
+        emoji = it.get("emoji", "")
+        if not isinstance(emoji, str) or len(emoji) > 8:
+            raise ConfigError(f"Kasse-Artikel {name}: Symbol zu lang")
+        out.append({"id": it["id"], "name": name, "emoji": emoji.strip(),
+                    "price_cents": _int(it, "price_cents", 0, SHOP_MAX_CENTS)})
+    if len({i["id"] for i in out}) != len(out):
+        raise ConfigError("doppelte Kasse-Artikel-id")
+    return out
+
+
 def parse_config(c: dict) -> BoothConfig:
     """Validate a booth.json dict (file or staff page) -> BoothConfig."""
     try:
@@ -132,6 +163,7 @@ def parse_config(c: dict) -> BoothConfig:
             kiosk_idle_s=_int({"idle_s": k.get("idle_s", 90)}, "idle_s", 20, 600),
             kiosk_sound=bool(k.get("sound", True)),
             print_setup=c.get("print_setup") or None,
+            shop_items=_shop_items(c.get("shop_items", DEFAULT_SHOP_ITEMS)),
         )
     except KeyError as e:
         raise ConfigError(f"Einstellung fehlt: {e.args[0]}") from None
@@ -154,6 +186,7 @@ def config_dict(cfg: BoothConfig) -> dict:
         "disabled_fonts": cfg.disabled_fonts,
         "disabled_shapes": cfg.disabled_shapes,
         "print_setup": cfg.print_setup,
+        "shop_items": cfg.shop_items,
         "staff_pin": cfg.file_pin or cfg.staff_pin,
         "printer": cfg.printer,
     }

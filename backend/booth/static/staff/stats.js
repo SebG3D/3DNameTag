@@ -22,6 +22,8 @@ function renderStats(st) {
       <div><b>${t.tags_open}</b><span>offen</span></div>
       <div><b>${euro(t.paid_cents)}</b><span>kassiert</span></div>
     </div>
+    <p>🧾 Kasse: ${euro(t.items_cents)} · Anhänger: ${euro(t.tags_paid_cents)}</p>
+    <p class="muted">Verkauft: ${counts(t.items_sold, esc)}</p>
     ${t.due_cents ? `<p class="err">${euro(t.due_cents)} noch nicht bezahlt</p>` : ""}
     <p class="muted">${t.free_tags} gratis · ${t.tags_cancelled} storniert · ${t.plates_done} Platten
       (${t.print_h} h Druckzeit)${t.plates_failed ? ` · ${t.plates_failed} fehlgeschlagen/abgebrochen` : ""}</p>
@@ -97,13 +99,4 @@ async function loadStats() {
   catch (e) { if (e.message !== "login") $("statsView").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }
 
-function showStats(on) {
-  if (on) showSettings(false);
-  $("statsView").classList.toggle("hidden", !on);
-  $("overview").classList.toggle("hidden", on || !$("settingsView").classList.contains("hidden"));
-  $("statsBtn").classList.toggle("primary", on);
-  if (on) loadStats();
-  window.scrollTo(0, 0);
-}
-
-$("statsBtn").onclick = () => showStats($("statsView").classList.contains("hidden"));
+tabEnter.stats = loadStats;
