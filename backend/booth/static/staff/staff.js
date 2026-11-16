@@ -165,7 +165,7 @@ function plateRow(p) {
   if (p.status === "color_change") extra = `<div class="banner att">🎨 Jetzt ${dot(c.hex)} ${esc(c.name)} einlegen!</div>
     ${st.kind === "sim" ? `<button class="warn" data-sim>Sim: Farbe gewechselt</button>` : ""}`;
   if (p.state === "error") extra = `<div class="note err">${esc(p.error || "Fehler")}</div>`;
-  if (p.state === "done") extra = `<div class="note">🧹 Anhänger abnehmen</div>`;
+  if (p.state === "done") extra = `<div class="note">🧹 Anhänger abnehmen, dann ✓ Abgenommen</div>`;
 
   let btn = "";
   if (p.state === "waiting" || p.state === "error" || p.state === "done") {
@@ -183,7 +183,8 @@ function plateRow(p) {
       ${p.recommended && !busy() ? `<span class="hint">⭐ als Nächstes</span>` : ""}
       <span class="spacer"></span>
       ${btn}
-      <button class="big icon danger" data-del="${p.id}" title="Löschen">🗑️</button>
+      ${p.state === "done" ? `<button class="big primary" data-cleared="${p.id}" title="Anhänger abgenommen – Platte aus der Liste">✓ Abgenommen</button>`
+        : `<button class="big icon danger" data-del="${p.id}" title="Löschen">🗑️</button>`}
     </div>
     ${extra}
     <div class="names">${names}</div>
@@ -212,11 +213,12 @@ function deletePlate(p) {
 }
 
 $("plates").addEventListener("click", (e) => {
-  const el = e.target.closest("[data-start],[data-del],[data-sim],[data-show]");
+  const el = e.target.closest("[data-start],[data-del],[data-cleared],[data-sim],[data-show]");
   if (!el || el.disabled) return;
   const find = (id) => data.plates.find((p) => p.id === Number(id));
   if (el.dataset.start) startPlate(find(el.dataset.start));
   else if (el.dataset.del) deletePlate(find(el.dataset.del));
+  else if (el.dataset.cleared) act(`/api/staff/plates/${el.dataset.cleared}/delete`);   // done -> archived, tags stay printed
   else if ("sim" in el.dataset) act("/api/staff/sim/resume");
   else showPreview(Number(el.dataset.show));
 });

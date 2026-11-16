@@ -57,7 +57,8 @@ its text colour (up to `plate.max_tags` and what fits) → staff press ▶ Start
 itself; ⭐ marks the recommended one: full, or its oldest tag waited `plate.max_wait_min`) → colour change:
 staff load the text colour and confirm on the printer → plate done: take tags off (tap the plate for the
 preview with order numbers), load the base colour, start the next plate. Failed or done plates can be
-restarted (🔁), any plate deleted (🗑️, unprinted names go back onto a new plate). Pickup: 🎁 Abgeholt
+restarted (🔁); a done plate leaves the list with ✓ Abgenommen (tags stay printed), any other plate can be
+deleted (🗑️, unprinted names go back onto a new plate). Pickup: 🎁 Abgeholt
 (asks for the money if something is due).
 
 ## Kiosk frontend
