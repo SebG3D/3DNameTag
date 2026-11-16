@@ -61,8 +61,11 @@ Two touch screens on the two HDMI ports: the customer kiosk on one, the staff pa
 
 During setup it asks you to **tap the staff screen**. Both panels can report the same name
 (the ILITEK ones do), so `deploy/pi/screens.py` tells them apart by the USB port and writes
-`/etc/udev/rules.d/99-nametag-touch.rules` (`WL_OUTPUT=<screen>` per port). **Don't swap
-the touch USB cables afterwards.** If you do, run `--staff-screen` again. It also writes
+`/etc/udev/rules.d/99-nametag-touch.rules`: a libinput calibration matrix per port that
+squeezes the panel onto its own screen (labwc ignores `WL_OUTPUT`, and an unmapped panel
+spans both screens). **Don't swap the touch USB cables or change the screen layout
+afterwards.** If you do, run `--staff-screen` again (or just `sudo python3 deploy/pi/screens.py
+--user <user> --staff HDMI-A-2`). It also writes
 labwc window rules (marked block in `~/.config/labwc/rc.xml`: app id `nametag-kiosk` /
 `nametag-staff` to their screen) and adds `nametag-kiosk staff` to the autostart. Then reboot.
 Re-running `install.sh` without the option leaves this setup as it is. The staff login

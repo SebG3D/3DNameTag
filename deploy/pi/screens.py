@@ -9,15 +9,18 @@ Customer kiosk on one HDMI screen, staff page on the other. Run as root:
 What it writes:
   * labwc window rules (in the user's ~/.config/labwc/rc.xml, between marker
     comments): app id nametag-kiosk -> kiosk screen, nametag-staff -> staff screen.
-  * udev rule /etc/udev/rules.d/99-nametag-touch.rules: each touch panel gets
-    WL_OUTPUT=<its screen>, keyed by the USB port (both panels may report the same
-    name, e.g. "ILITEK ILITEK-TP"). labwc maps a touch device to its WL_OUTPUT.
-    Which panel is which is found by asking for a tap on the staff screen.
-    So: do not swap the touch USB cables between ports afterwards.
+  * udev rule /etc/udev/rules.d/99-nametag-touch.rules: each touch panel gets a
+    LIBINPUT_CALIBRATION_MATRIX that squeezes it onto its own screen, keyed by the
+    USB port (both panels may report the same name, e.g. "ILITEK ILITEK-TP", so
+    labwc's <touch deviceName mapToOutput> can't tell them apart, and labwc 0.20
+    ignores WL_OUTPUT: an unmapped touch panel spans the whole desktop, i.e. both
+    screens). Which panel is which is found by asking for a tap on the staff screen.
+    So: do not swap the touch USB cables or change the screen layout afterwards
+    (if you do, run this again).
   * autostart line "nametag-kiosk staff".
 Takes effect after a reboot.
 """
-import argparse, glob, os, pwd, re, select, shutil, subprocess, sys, time
+import argparse, glob, json, os, pwd, re, select, shutil, subprocess, sys, time
 
 UDEV_RULE = "/etc/udev/rules.d/99-nametag-touch.rules"
 BEGIN, END = "<!-- nametag-screens begin -->", "<!-- nametag-screens end -->"
@@ -65,16 +68,46 @@ def wait_for_tap(devs, seconds=90):
     return None
 
 
+def output_boxes(user, uid):
+    """{output: (x, y, w, h)} in desktop (layout) coordinates, from the running labwc."""
+    env = {"WAYLAND_DISPLAY": "wayland-0", "XDG_RUNTIME_DIR": f"/run/user/{uid}", "PATH": os.environ.get("PATH", "")}
+    r = subprocess.run(["sudo", "-u", user, "env", *[f"{k}={v}" for k, v in env.items()], "wlr-randr", "--json"],
+                       capture_output=True, text=True)
+    if r.returncode:
+        sys.exit("wlr-randr failed (is the desktop running on the screens?): " + r.stderr.strip())
+    boxes = {}
+    for o in json.loads(r.stdout):
+        mode = next((m for m in o.get("modes", []) if m.get("current")), None)
+        if not o.get("enabled") or not mode:
+            continue
+        w, h = mode["width"] / o.get("scale", 1), mode["height"] / o.get("scale", 1)
+        if o.get("transform") in ("90", "270", "flipped-90", "flipped-270"):
+            w, h = h, w
+        boxes[o["name"]] = (o["position"]["x"], o["position"]["y"], w, h)
+    return boxes
+
+
+def matrix(box, boxes):
+    """libinput calibration matrix: whole panel (0..1) -> box inside the desktop bounding box."""
+    x0 = min(b[0] for b in boxes.values()); y0 = min(b[1] for b in boxes.values())
+    W = max(b[0] + b[2] for b in boxes.values()) - x0
+    H = max(b[1] + b[3] for b in boxes.values()) - y0
+    x, y, w, h = box
+    f = lambda v: f"{v:.6g}"
+    return " ".join(map(f, (w / W, 0, (x - x0) / W, 0, h / H, (y - y0) / H)))
+
+
 def write_udev(mapping):
-    """mapping: {ID_PATH: output}; empty -> remove the rule."""
+    """mapping: {ID_PATH: (output, calibration matrix)}; empty -> remove the rule."""
     if not mapping:
         if os.path.exists(UDEV_RULE):
             os.remove(UDEV_RULE)
     else:
         lines = ["# nametag booth: touch panel -> screen by USB port (deploy/pi/screens.py)"]
-        for path, out in mapping.items():
+        for path, (out, m) in mapping.items():
+            lines.append(f"# -> {out}")
             lines.append(f'ACTION=="add|change", SUBSYSTEM=="input", ENV{{ID_INPUT_TOUCHSCREEN}}=="1", '
-                         f'ENV{{ID_PATH}}=="{path}", ENV{{WL_OUTPUT}}="{out}"')
+                         f'ENV{{ID_PATH}}=="{path}", ENV{{LIBINPUT_CALIBRATION_MATRIX}}="{m}"')
         open(UDEV_RULE, "w").write("\n".join(lines) + "\n")
     subprocess.run(["udevadm", "control", "--reload"], check=False)
     subprocess.run(["udevadm", "trigger", "--subsystem-match=input", "--action=change"], check=False)
@@ -147,6 +180,10 @@ def main():
     kiosk = "HDMI-A-1" if "HDMI-A-1" in others else others[0]
     print(f"customer kiosk: {kiosk}   staff page: {staff}")
 
+    boxes = output_boxes(a.user, uid)
+    if staff not in boxes or kiosk not in boxes:
+        sys.exit(f"screens not active in the desktop: {boxes}")
+    print("desktop layout:", ", ".join(f"{k} {int(v[2])}x{int(v[3])}+{v[0]}+{v[1]}" for k, v in boxes.items()))
     touch = touchscreens()
     mapping = {}
     if not touch:
@@ -158,7 +195,8 @@ def main():
             sys.exit("no tap seen: run again")
         print(f"staff touch: {dev} (USB {touch[dev]})")
         for d, path in touch.items():
-            mapping[path] = staff if d == dev else kiosk
+            out = staff if d == dev else kiosk
+            mapping[path] = (out, matrix(boxes[out], boxes))
         if len(set(mapping)) < len(touch):
             print("NOTE: two touch panels share one USB path, mapping may be wrong")
 
