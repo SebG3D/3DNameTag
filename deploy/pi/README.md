@@ -70,8 +70,9 @@ labwc window rules (marked block in `~/.config/labwc/rc.xml`: app id `nametag-ki
 `nametag-staff` to their screen) and adds `nametag-kiosk staff` to the autostart. Then reboot.
 Re-running `install.sh` without the option leaves this setup as it is. The staff login
 has an on-screen PIN pad, and the staff screen opens `/staff/?osk=1`, which turns on the
-on-screen keyboard (`static/staff/osk.js`) for all text, number and time fields (phones
-without `?osk=1` keep their own keyboard; `?osk=0` turns it off again).
+on-screen keyboard (`static/staff/osk.js`) for all text, number and time fields. Without
+the parameter it switches on by itself on a touch screen that is not a phone/tablet (those
+keep their own keyboard); `?osk=0` turns it off.
 
 ## 3. Printer (Core One)
 

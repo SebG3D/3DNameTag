@@ -5,11 +5,17 @@
 "use strict";
 
 (() => {
+  // ?osk=1 / ?osk=0 force it (remembered for the tab); otherwise on for a touch screen
+  // that is not a phone or tablet (they bring their own keyboard; iPadOS says "Macintosh").
   const params = new URLSearchParams(location.search);
+  const auto = navigator.maxTouchPoints > 0 && !/Android|iPhone|iPad|iPod|Mobile|Macintosh/i.test(navigator.userAgent);
+  let on = auto;
   try {
     if (params.has("osk")) sessionStorage.setItem("osk", params.get("osk") === "0" ? "0" : "1");
-    if (sessionStorage.getItem("osk") !== "1") return;
-  } catch { if (!params.has("osk") || params.get("osk") === "0") return; }
+    const saved = sessionStorage.getItem("osk");
+    if (saved !== null) on = saved === "1";
+  } catch { if (params.has("osk")) on = params.get("osk") !== "0"; }
+  if (!on) return;
 
   const TEXT_TYPES = new Set(["text", "password", "search", "email", "url", "tel", ""]);
   const LAYOUTS = {
