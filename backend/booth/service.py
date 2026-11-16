@@ -44,6 +44,7 @@ BACKUP_EVERY_S = 3600
 BACKUP_KEEP = 48
 ICON_NAME, ICON_FONT = "EMMA", "baloo"
 START_GRACE_S = 90          # printer may report idle this long after upload
+NOZZLE_POLL_S = 30          # how often the printer's nozzle setting is read
 # Time model, refined after every sliced plate (est = overhead + area * k).
 DEFAULT_PLATE_OVERHEAD_S = 35        # fitted to PrusaSlicer estimates, nozzle040s (2026-11-04)
 DEFAULT_S_PER_MM2 = 0.157
@@ -121,6 +122,8 @@ class Booth:
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="render")
         self.lock = threading.RLock()            # scheduler vs. staff actions
         self.last_status = PrinterStatus("offline", message="not polled yet")
+        self.nozzle: float | None = None             # as reported by the printer (menu setting)
+        self._nozzle_at = float("-inf")
         self.plate_overhead_s = self.db.get_state("plate_overhead_s", DEFAULT_PLATE_OVERHEAD_S)
         self.s_per_mm2 = self.db.get_state("s_per_mm2", DEFAULT_S_PER_MM2)
         # real plate duration / slicer estimate (heating, M600 wait), learned
@@ -484,6 +487,8 @@ class Booth:
         with self.lock:
             st = self.printer.status()
             self.last_status = st
+            if st.state != "offline" and self.clock() - self._nozzle_at >= NOZZLE_POLL_S:
+                self.refresh_nozzle()
             self.plan()
             plate = self.db.active_plate()
             if not plate:
@@ -492,6 +497,18 @@ class Booth:
                 self._start_plate(plate["id"])
             else:
                 self._supervise(plate, st)
+
+    def refresh_nozzle(self) -> float | None:
+        n = self.printer.nozzle_diameter()
+        self._nozzle_at = self.clock()
+        if n is not None and n != self.nozzle:
+            log.info("printer nozzle: %g mm (setup %s wants %g mm)", n, self.setup.name, self.setup.nozzle)
+        self.nozzle = n
+        return n
+
+    def nozzle_wrong(self) -> bool:
+        """Printer reports a different nozzle than the print setup's profile."""
+        return self.nozzle is not None and abs(self.nozzle - self.setup.nozzle) > 0.001
 
     def _supervise(self, plate: dict, st: PrinterStatus) -> None:
         pid, status = plate["id"], plate["status"]
@@ -639,7 +656,9 @@ class Booth:
         st = self.last_status
         return {"printer": {"kind": self.printer.kind, "state": st.state, "progress": round(st.progress, 1),
                             "remaining_s": st.remaining_s, "message": st.message,
-                            "foreign_job": self.foreign_job_s() > 0},
+                            "foreign_job": self.foreign_job_s() > 0,
+                            "nozzle": self.nozzle, "nozzle_want": self.setup.nozzle,
+                            "nozzle_wrong": self.nozzle_wrong()},
                 "orders": orders, "plates": plates,
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
                 "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day(),
@@ -709,6 +728,11 @@ class Booth:
             self.last_status = st
             if st.state not in ("idle", "finished"):
                 raise BoothError("printer_busy", "Drucker ist nicht bereit")
+            self.refresh_nozzle()
+            if self.nozzle_wrong():
+                raise BoothError("wrong_nozzle", f"Falsche Düse: Drucker meldet {self.nozzle:g} mm, gebraucht wird "
+                                                 f"{self.setup.nozzle:g} mm – Düse wechseln und im Druckermenü "
+                                                 "einstellen")
             self.printer.acknowledge()
             self.db.plate_status(pid, "building", error=None)
 
@@ -824,6 +848,8 @@ class Booth:
                 self.setup = setup
                 for pid in list(self.previews):
                     shutil.rmtree(self.previews.pop(pid).stl.parent, ignore_errors=True)
+            if printer is not self.printer:
+                self.nozzle, self._nozzle_at = None, float("-inf")
             self.cfg, self.printer = new, printer
             self.config_rev += 1
         log.info("settings saved (rev %d)", self.config_rev)

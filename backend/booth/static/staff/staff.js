@@ -151,6 +151,14 @@ function foreignBanner() {
     <div class="note">Die Wartezeit ist schon eingerechnet.</div>`;
 }
 
+// printer menu reports another nozzle than the print setup needs: no plate can start
+function nozzleBanner() {
+  const st = data.printer;
+  if (!st.nozzle_wrong) return "";
+  return `<div class="banner att">🔧 Falsche Düse: ${st.nozzle} mm drin – bitte ${st.nozzle_want} mm einsetzen!</div>
+    <div class="note">Danach am Drucker im Menü den Düsendurchmesser auf ${st.nozzle_want} stellen.</div>`;
+}
+
 function plateRow(p) {
   const [icon, word, cls] = PLATE[p.state];
   const c = color(p.text_color);
@@ -171,7 +179,7 @@ function plateRow(p) {
   if (p.state === "waiting" || p.state === "error" || p.state === "done") {
     const label = p.state === "waiting" ? "▶ Start" : "🔁 Nochmal";
     btn = `<button class="big ${p.state === "waiting" ? "primary" : "warn"}" data-start="${p.id}"
-      ${busy() ? "disabled" : ""}>${label}</button>`;
+      ${busy() || st.nozzle_wrong ? "disabled" : ""}>${label}</button>`;
   }
   const names = p.tags.map((t) => `${t.reprint ? "🔁 " : ""}${esc(t.name)} <span class="muted">#${esc(t.order_number)}</span>`).join(", ");
   return `<div class="plate ${cls}${p.recommended && !busy() ? " next" : ""}" data-show="${p.id}">
@@ -192,7 +200,7 @@ function plateRow(p) {
 }
 
 function renderPlates() {
-  $("plates").innerHTML = foreignBanner() + (data.plates.map(plateRow).join("") ||
+  $("plates").innerHTML = nozzleBanner() + foreignBanner() + (data.plates.map(plateRow).join("") ||
     `<p class="empty">Noch keine Platten. Sie kommen, sobald jemand bestellt.</p>`);
 }
 

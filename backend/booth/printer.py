@@ -47,6 +47,10 @@ class Printer:
     def abort(self) -> None:
         """Staff cancelled the plate. Real printers: staff stop it on the printer."""
 
+    def nozzle_diameter(self) -> float | None:
+        """Nozzle diameter set in the printer menu (mm), None = unknown."""
+        return None
+
 
 class SimPrinter(Printer):
     """speed: simulated seconds per real second. Colour change at the M600
@@ -162,7 +166,18 @@ class PrusaLinkPrinter(Printer):
             st.message = f"Speicher '{self.storage}' fehlt - USB-Stick in den Drucker stecken!"
         else:
             st.message = f"{st.message}, USB ok".strip(", ")
+        if (d := self.nozzle_diameter()) is not None:
+            st.message = f"{st.message}, Düse {d:g} mm".strip(", ")
         return st
+
+    def nozzle_diameter(self) -> float | None:
+        """From /api/v1/info - what is set in the printer menu, the printer
+        cannot see the nozzle itself."""
+        try:
+            d = self._get("/api/v1/info").get("nozzle_diameter")
+            return float(d) if d is not None else None
+        except (httpx.HTTPError, ValueError, TypeError, PrinterNotReady):
+            return None
 
     def start(self, gcode: Path, est_s: int) -> None:
         name = gcode.name

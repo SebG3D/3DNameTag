@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from booth.config import load_config                       # noqa: E402
 from booth.fakelink import FakePrinter, serve              # noqa: E402
 from booth.printer import PrinterNotReady, PrusaLinkPrinter  # noqa: E402
-from booth.service import Booth                            # noqa: E402
+from booth.service import Booth, BoothError               # noqa: E402
 
 
 class Clock:
@@ -197,3 +197,24 @@ def test_upload_refused_gives_clear_reason(booth_fake):
     start(booth)
     p = plate(booth)
     assert p["status"] == "failed" and "USB-Stick" in p["error"]
+
+
+def test_wrong_nozzle_blocks_start(booth_fake):
+    """Printer menu says another nozzle than the setup's profile: staff get a
+    banner and the plate does not start until it matches."""
+    booth, f, host, clock = booth_fake                          # setup nozzle040s -> 0.4 mm
+    assert booth.setup.nozzle == 0.4
+    assert "Düse 0.4 mm" in booth.printer.check().message
+    order(booth, ("EMMA", "red"))
+    ctl(host, "nozzle/0.25")
+    booth.tick()
+    pr = booth.staff_overview()["printer"]
+    assert pr["nozzle"] == 0.25 and pr["nozzle_want"] == 0.4 and pr["nozzle_wrong"]
+    pid = booth.db.q1("SELECT id FROM plates WHERE status='waiting'")["id"]
+    with pytest.raises(BoothError, match="Falsche Düse"):
+        booth.staff_plate_start(pid)
+    assert f.state == "IDLE"
+    ctl(host, "nozzle/0.4")                                     # swapped + set in the menu
+    start(booth)
+    assert plate(booth)["status"] == "printing"
+    assert not booth.staff_overview()["printer"]["nozzle_wrong"]

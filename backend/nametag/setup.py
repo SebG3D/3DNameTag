@@ -27,6 +27,7 @@ class PrintSetup:
     color_change: str = "tower"   # "tower": purge on a wipe tower | "wiper": purge + wipe on the Core One+ wiper
     wiper_z: float = -0.6         # wiper mode: Z of the wipe pass (pad top ~0.2 above the touchpoint, measured with G12)
     text_temp: float = 0.0        # wiper mode: nozzle temperature for the text colour
+    nozzle: float = 0.0           # nozzle diameter of the profile (the printer must report the same)
 
     @property
     def text_layers(self) -> int:
@@ -41,7 +42,7 @@ def _ini_value(profile: Path, key: str) -> float:
     m = re.search(rf"^{key} = (.*)$", profile.read_text(), re.M)
     if not m:
         raise ValueError(f"{key} missing in {profile}")
-    return float(m[1])
+    return float(m[1].split(",")[0])          # per-extruder lists ("0.25,0.25"): first tool
 
 
 def load_setup(name: str | None = None, config: Path = CONFIG) -> PrintSetup:
@@ -65,7 +66,8 @@ def load_setup(name: str | None = None, config: Path = CONFIG) -> PrintSetup:
     return PrintSetup(name, profile, e["scale"], e["min_text_size"], e["base_h"], e["text_h"],
                       e["text_overlap"], e["hole_d"], e["text_grow"], layer, first, text_layer,
                       cc, float(e.get("wiper_z", -0.6)),
-                      _ini_value(profile, "temperature") + float(e.get("text_temp_delta", 0)))
+                      _ini_value(profile, "temperature") + float(e.get("text_temp_delta", 0)),
+                      _ini_value(profile, "nozzle_diameter"))
 
 
 def list_setups(config: Path = CONFIG) -> tuple[str, dict]:

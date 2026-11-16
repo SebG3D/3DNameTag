@@ -4,6 +4,7 @@ Implements the parts of PrusaLink API v1 the booth uses, following the
 official spec (github.com/prusa3d/Prusa-Link-Web, spec/openapi.yaml):
 
   GET  /api/v1/status                  printer.state, job.id/progress/time_remaining
+  GET  /api/v1/info                    nozzle_diameter (menu setting)
   GET  /api/v1/storage                 storage_list (USB only, like the Core One)
   PUT  /api/v1/files/usb/<name>        upload, Print-After-Upload: ?1 starts it (201)
   DELETE /api/v1/job/<id>              stop
@@ -16,7 +17,7 @@ position) until /fake/resume, ends in FINISHED, which stays until /fake/tap
 (the user confirms on the printer screen) -> IDLE.
 
 Control (no auth): POST /fake/resume | /fake/tap | /fake/abort | /fake/offline/<0|1>
-| /fake/no_usb/<0|1> | /fake/error/<0|1>,  GET /fake/state
+| /fake/no_usb/<0|1> | /fake/error/<0|1> | /fake/nozzle/<mm>,  GET /fake/state
 
 Run:  python -m booth.fakelink --port 8081 --password secret --duration 120
 then set the booth printer to prusalink, host 127.0.0.1:8081, user maker.
@@ -47,6 +48,7 @@ class FakePrinter:
         self.job_counter = 100
         self.files: dict[str, bytes] = {}
         self.offline = self.no_usb = False
+        self.nozzle = 0.4
         self.nonces: set[str] = set()
         self.log: list[str] = []
 
@@ -173,6 +175,9 @@ def make_handler(fake: FakePrinter):
             elif p[1] in ("offline", "no_usb") and len(p) == 3:
                 setattr(fake, p[1], p[2] == "1")
                 self._send(204)
+            elif p[1] == "nozzle" and len(p) == 3:
+                fake.nozzle = float(p[2])
+                self._send(204)
             elif p[1] == "error" and len(p) == 3:
                 fake.state = "ERROR" if p[2] == "1" else "IDLE"
                 self._send(204)
@@ -195,6 +200,8 @@ def make_handler(fake: FakePrinter):
             path = self.path.split("?")[0]
             if method == "GET" and path == "/api/v1/status":
                 return self._send(200, fake.status())
+            if method == "GET" and path == "/api/v1/info":
+                return self._send(200, {"nozzle_diameter": fake.nozzle, "mmu": False, "hostname": "fake-coreone"})
             if method == "GET" and path == "/api/v1/storage":
                 lst = [] if fake.no_usb else [{"name": "USB", "type": "USB", "path": "/usb",
                                                "available": True, "read_only": False}]
