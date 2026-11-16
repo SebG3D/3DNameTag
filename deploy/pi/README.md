@@ -51,6 +51,23 @@ sudo reboot
 
 Run it again any time (update, new PIN); it only changes what is needed.
 
+### Second screen for the staff page (optional)
+
+Two touch screens on the two HDMI ports: the customer kiosk on one, the staff page on the other.
+
+    sudo deploy/pi/install.sh --staff-screen            # staff = HDMI-A-2, kiosk = HDMI-A-1
+    sudo deploy/pi/install.sh --staff-screen HDMI-A-1   # the other way round
+    sudo deploy/pi/install.sh --no-staff-screen         # back to one screen
+
+During setup it asks you to **tap the staff screen**. Both panels can report the same name
+(the ILITEK ones do), so `deploy/pi/screens.py` tells them apart by the USB port and writes
+`/etc/udev/rules.d/99-nametag-touch.rules` (`WL_OUTPUT=<screen>` per port). **Don't swap
+the touch USB cables afterwards.** If you do, run `--staff-screen` again. It also writes
+labwc window rules (marked block in `~/.config/labwc/rc.xml`: app id `nametag-kiosk` /
+`nametag-staff` to their screen) and adds `nametag-kiosk staff` to the autostart. Then reboot.
+Re-running `install.sh` without the option leaves this setup as it is. The staff login
+has an on-screen PIN pad. Text fields in the settings still need a keyboard (or use a phone).
+
 ## 3. Printer (Core One)
 
 1. Printer menu › Settings › Network › Ethernet: **static IP `192.168.10.2`**, mask

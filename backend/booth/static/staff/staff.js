@@ -82,7 +82,7 @@ function showLogin() {
 async function login() {
   const r = await fetch("/api/staff/login", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pin: $("pin").value }) });
-  if (!r.ok) { $("loginErr").textContent = "Falsche PIN"; return; }
+  if (!r.ok) { $("loginErr").textContent = "Falsche PIN"; $("pin").value = ""; return; }
   token = (await r.json()).token; sessionStorage.setItem("staffToken", token);
   $("login").classList.add("hidden"); $("app").classList.remove("hidden"); $("pin").value = "";
   refresh();
@@ -336,5 +336,12 @@ async function refresh() {
 
 $("loginBtn").onclick = login;
 $("pin").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
+$("pinKeys").onclick = (e) => {
+  const k = e.target.closest("button")?.dataset.pin;
+  if (!k) return;
+  const pin = $("pin");
+  pin.value = k === "clear" ? "" : k === "back" ? pin.value.slice(0, -1) : (pin.value + k).slice(0, 8);
+  $("loginErr").textContent = "";
+};
 if (token) { $("app").classList.remove("hidden"); refresh(); } else showLogin();
 setInterval(refresh, 2000);

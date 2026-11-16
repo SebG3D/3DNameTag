@@ -4,6 +4,8 @@
 # Run from the cloned repository:
 #
 #   sudo deploy/pi/install.sh [--pin 2468] [--hotspot SSID PASSWORD] [--printer-ip 192.168.10.2] [--no-kiosk]
+#   sudo deploy/pi/install.sh --staff-screen [HDMI-A-2]   # 2nd screen with the staff page (asks for a tap)
+#   sudo deploy/pi/install.sh --no-staff-screen           # back to the kiosk screen only
 #   sudo deploy/pi/install.sh --readonly        # last step: read-only root
 #   sudo deploy/pi/install.sh --writable        # undo, e.g. for an update
 #
@@ -23,6 +25,7 @@ PI_IP=192.168.10.1
 PRINTER_IP=192.168.10.2
 MODE=install
 KIOSK=auto
+STAFF_SCREEN=""     # "" = leave as it is, auto/HDMI-A-x = set up, off = remove
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -31,9 +34,12 @@ while [ $# -gt 0 ]; do
         --hotspot) HOTSPOT_SSID="$2"; HOTSPOT_PASS="$3"; shift 3 ;;
         --printer-ip) PRINTER_IP="$2"; shift 2 ;;
         --no-kiosk) KIOSK=no; shift ;;
+        --staff-screen)
+            if [ $# -gt 1 ] && [[ "$2" != --* ]]; then STAFF_SCREEN="$2"; shift 2; else STAFF_SCREEN=auto; shift; fi ;;
+        --no-staff-screen) STAFF_SCREEN=off; shift ;;
         --readonly) MODE=readonly; shift ;;
         --writable) MODE=writable; shift ;;
-        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
 done
@@ -199,6 +205,13 @@ grep -q nametag-kiosk "$AUTOSTART" || echo "/usr/local/bin/nametag-kiosk &" >> "
 chown "$USER_NAME:" "$AUTOSTART"
 if [ -e "$USER_HOME/.config/wayfire.ini" ] && ! pgrep -x labwc >/dev/null; then
     echo "NOTE: this desktop may run wayfire, not labwc: switch with raspi-config (Advanced > Wayland > labwc)"
+fi
+if [ "$STAFF_SCREEN" = off ]; then
+    say "staff screen off"
+    python3 "$HERE/screens.py" --user "$USER_NAME" --off
+elif [ -n "$STAFF_SCREEN" ]; then
+    say "second screen: staff page"
+    python3 "$HERE/screens.py" --user "$USER_NAME" --staff "$STAFF_SCREEN"
 fi
 else
     say "no desktop (Lite image or --no-kiosk): kiosk screen skipped, open http://<this Pi>:8080/kiosk/ in a browser"

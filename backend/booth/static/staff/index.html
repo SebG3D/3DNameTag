@@ -4,12 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Namensanhänger – Betreuer</title>
-<link rel="stylesheet" href="staff.css?v=6">
+<link rel="stylesheet" href="staff.css?v=7">
 </head>
 <body>
 <div id="login" class="card hidden">
   <h1>🔒 Betreuer</h1>
   <input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+  <!-- touch screen without a keyboard (second booth screen): digits on the page -->
+  <div class="keys" id="pinKeys">
+    <button data-pin="1">1</button><button data-pin="2">2</button><button data-pin="3">3</button>
+    <button data-pin="4">4</button><button data-pin="5">5</button><button data-pin="6">6</button>
+    <button data-pin="7">7</button><button data-pin="8">8</button><button data-pin="9">9</button>
+    <button data-pin="clear">C</button><button data-pin="0">0</button><button data-pin="back">⌫</button>
+  </div>
   <button id="loginBtn" class="primary big">Los</button>
   <p id="loginErr" class="err"></p>
 </div>
@@ -98,10 +105,10 @@
 <!-- plate preview, fullscreen; any click closes it -->
 <div id="preview" class="overlay hidden"></div>
 
-<script src="staff.js?v=6"></script>
-<script src="settings.js?v=6"></script>
-<script src="stats.js?v=6"></script>
-<script src="ordering.js?v=6"></script>
-<script src="kasse.js?v=6"></script>
+<script src="staff.js?v=7"></script>
+<script src="settings.js?v=7"></script>
+<script src="stats.js?v=7"></script>
+<script src="ordering.js?v=7"></script>
+<script src="kasse.js?v=7"></script>
 </body>
 </html>
