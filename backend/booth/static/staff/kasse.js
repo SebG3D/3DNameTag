@@ -11,11 +11,26 @@ const orderDue = (o) => (o && !o.paid ? o.price_cents : 0);
 const cartTotal = () => orderDue(cartOrder()) + cart.lines.reduce((s, l) => s + l.price_cents * l.qty, 0);
 const orderLabel = (o) => `#${o.number}${o.customer ? " " + esc(o.customer) : ""}`;
 
-// from the 🖨️ tab: this customer's tags go onto the receipt
-function kasseStart(o) {
+// from the 🖨️ tab: this customer's tags go into the basket; paying happens only here.
+// Tapping it again (already in the basket) takes it out.
+async function kasseAdd(o) {
   if (!o) return;
-  cart.order = o.id; cart.given = null;
-  showTab("kasse");
+  if (cart.order === o.id) cart.order = null;
+  else {
+    const old = cartOrder();
+    if (old && !(await ask(`<p class="q">🧾 Im Korb ist schon ${orderLabel(old)}.</p>
+      <p>Stattdessen ${orderLabel(o)} in den Korb?</p>`, "✓ Ja, tauschen"))) return;
+    cart.order = o.id;
+  }
+  cart.given = null;
+  renderKasse(); renderOrders();
+}
+
+// count on the 🧾 tab button, so the basket is seen from the other tabs
+function renderCartBadge() {
+  const n = (cartOrder() ? 1 : 0) + cart.lines.reduce((s, l) => s + l.qty, 0);
+  $("cartBadge").textContent = n;
+  $("cartBadge").classList.toggle("hidden", !n);
 }
 
 function addItem(it, price) {
@@ -53,8 +68,11 @@ $("keypad").addEventListener("click", (e) => {
 // ---------------------------------------------------------------- render
 function renderKasse() {
   if (!data) return;
-  const o = cartOrder();
-  if (cart.order != null && !o) cart.order = null;      // picked up / cancelled meanwhile
+  let o = cartOrder();
+  if (cart.order != null && (!o || o.paid)) cart.order = null;   // picked up / cancelled / paid meanwhile
+  o = cartOrder();
+  renderCartBadge();
+  if (tab !== "kasse") return;
   $("shopItems").innerHTML = (data.shop_items || []).map((it) =>
     `<button class="big shop" data-item="${esc(it.id)}"><span class="semoji">${esc(it.emoji || "🛍️")}</span>
       <span class="sname">${esc(it.name)}</span>

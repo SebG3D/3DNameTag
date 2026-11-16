@@ -248,9 +248,10 @@ function renderOrders() {
         ${o.customer ? `<span class="customer">${esc(o.customer)}</span>` : ""}
         ${o.day !== data.today ? `<span class="chip">${esc(o.day.slice(8))}.${esc(o.day.slice(5, 7))}.</span>` : ""}
         <span class="spacer"></span>
-        ${due ? `<button class="money" data-paid="${o.id}" title="Schon bezahlt">💶 ${euro(o.price_cents)}</button>` : ""}
-        <button class="big icon" data-kasse="${o.id}" title="Zur Kasse (mit anderen Sachen)">🧾</button>
-        ${o.ready ? `<button class="big primary" data-pickup="${o.id}">🎁 Abgeholt</button>` : ""}
+        ${due ? (cart.order === o.id
+          ? `<button class="money incart" data-kasse="${o.id}" title="Liegt im Korb – an der 🧾 Kasse bezahlen">✓ 🧾 im Korb</button>`
+          : `<button class="money" data-kasse="${o.id}" title="In den Korb, bezahlt wird an der 🧾 Kasse">🧾 ${euro(o.price_cents)} in den Korb</button>`)
+          : (o.ready ? `<button class="big primary" data-pickup="${o.id}">🎁 Abgeholt</button>` : "")}
         <button class="big icon danger" data-cancel="${o.id}" title="Stornieren">🗑️</button>
       </div>
       <div class="tags">${tags}</div>
@@ -261,17 +262,12 @@ function renderOrders() {
 $("orders").addEventListener("click", (e) => {
   const el = e.target.closest("button");
   if (!el) return;
-  const o = data.orders.find((x) => x.id === Number(el.dataset.pickup || el.dataset.paid || el.dataset.cancel ||
-    el.dataset.kasse));
-  if (el.dataset.kasse) return kasseStart(o);
+  const o = data.orders.find((x) => x.id === Number(el.dataset.pickup || el.dataset.cancel || el.dataset.kasse));
+  if (el.dataset.kasse) return kasseAdd(o);
   const who = o ? `#${o.number}${o.customer ? " " + esc(o.customer) : ""}` : "";
   if (el.dataset.pickup) {
-    const due = !o.paid && o.price_cents > 0;
-    act(`/api/staff/orders/${o.id}/pickup`, due
-      ? `<p class="q">💶 ${euro(o.price_cents)} bekommen?</p><p>Dann ist ${who} abgeholt.</p>`
-      : `<p class="q">🎁 ${who} abgeholt?</p>`, due ? "✓ Ja, Geld da" : "✓ Ja");
-  } else if (el.dataset.paid) {
-    act(`/api/staff/orders/${o.id}/paid`, `<p class="q">💶 ${who} hat ${euro(o.price_cents)} schon bezahlt?</p>`);
+    // money is only taken at the 🧾 Kasse; this button shows for paid / free orders
+    act(`/api/staff/orders/${o.id}/pickup`, `<p class="q">🎁 ${who} abgeholt?</p>`, "✓ Ja");
   } else if (el.dataset.cancel) {
     act(`/api/staff/orders/${o.id}/cancel`, `<p class="q">🗑️ Bestellung ${who} stornieren?</p>
       <p>Nicht gedruckte Namen werden gelöscht.</p><p><b>Bist du sicher?</b></p>`, "🗑️ Ja, stornieren", "danger-solid");
@@ -306,9 +302,9 @@ function render() {
   $("printerChip").textContent = `${icon} ${txt}${data.printer.kind === "sim" ? " (Sim)" : ""}`;
   $("printerChip").className = "status " + cls;
   $("etaAll").textContent = data.eta_all_s > 0 ? `alles fertig in ca. ${mins(data.eta_all_s)}` : "";
+  if (typeof renderKasse === "function") renderKasse();   // also drops a cart order that is gone
   renderPlates(); renderOrders();
   if (typeof renderOrderChip === "function") renderOrderChip();
-  if (typeof renderKasse === "function" && tab === "kasse") renderKasse();
   renderClock();
 }
 

@@ -169,7 +169,11 @@ button.full { width: 100%; margin-top: 12px; }
 
 /* tabs: top left of the header, one button per view */
 nav.tabs { display: flex; gap: 6px; }
-nav.tabs button { font-size: 28px; padding: 6px 14px; min-width: 64px; }
+nav.tabs button { font-size: 36px; padding: 12px 20px; min-width: 260px; min-height: 76px; position: relative; }
+nav.tabs .badge { position: absolute; top: 6px; right: 10px; min-width: 34px; padding: 0 8px; border-radius: 999px;
+  background: #d32f2f; color: #fff; font-size: 22px; font-weight: 800; line-height: 34px; }
+button.money.incart { background: #d6f2dc; color: #1d6b2e; }
+@media (max-width: 1300px) { nav.tabs { flex: 1 1 100%; } nav.tabs button { flex: 1; min-width: 0; } }
 
 /* Kasse */
 #kasseView { grid-template-columns: 1fr 1fr; }

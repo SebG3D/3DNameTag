@@ -1,6 +1,6 @@
 import { useEffect, useState, type Dispatch } from "react";
 import { api } from "../api";
-import { colorById, fontFamily, useConfig } from "../config";
+import { colorById, contrastHex, fontFamily, useConfig } from "../config";
 import { Keyboard } from "../components/Keyboard";
 import { Spinner } from "../components/Chrome";
 import { TagSvg } from "../components/TagSvg";
@@ -104,7 +104,7 @@ export function ShapeScreen({ state, dispatch }: P) {
               <button key={s.id} disabled={!ok} className={sel ? "card shape sel" : "card shape"}
                 onClick={() => dispatch({ type: "SET_SHAPE", shapeId: s.id })}>
                 <div className="shape-icon">
-                  {ic ? <TagSvg outline={ic.outline} text={ic.text} baseHex={cfg.base_color.hex} textHex="#ffffff" /> : <Spinner />}
+                  {ic ? <TagSvg outline={ic.outline} text={ic.text} baseHex={cfg.base_color.hex} textHex={contrastHex(cfg)} /> : <Spinner />}
                 </div>
                 <span className="card-label">{s.label.de}</span>
                 {!ok && <span className="too-long">Name zu lang</span>}
@@ -143,7 +143,7 @@ function useRealIcons(name: string, fontId: string | null, fit: Record<string, b
 function PreviewBox({ state, dispatch }: P) {
   const cfg = useConfig();
   const d = state.draft;
-  const textHex = colorById(cfg, d.colorId ?? cfg.text_colors[0].id).hex;
+  const textHex = d.colorId ? colorById(cfg, d.colorId).hex : contrastHex(cfg);
   return (
     <div className="preview-box">
       {d.preview ? (
