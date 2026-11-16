@@ -65,20 +65,19 @@ const sfx = (() => {
       bell(t, 1319, 0.9, 0.2); bell(t + 0.18, 1568, 0.9, 0.2);
       return 0.9;
     },
-    crunch(t) {                                         // two bites into a crisp cookie
+    crunch(t) {                                         // a long bite into a crisp cookie
       // a crunch is many tiny, irregular cracks (grains), not a few puffs of noise
       const bite = (start, len, grains) => {
         for (let i = 0; i < grains; i++) {
-          const at = start + Math.pow(Math.random(), 1.6) * len;           // dense at the start of the bite
+          const at = start + Math.pow(Math.random(), 1.25) * len;          // a bit denser at the start
           noise(at, 0.004 + Math.random() * 0.018, {
             freq: 900 + Math.random() * 4500, q: 0.6 + Math.random() * 2,
             vol: 0.25 + Math.random() * 0.5, attack: 0.001 });
         }
         noise(start, 0.06, { type: "lowpass", freq: 600, vol: 0.35, attack: 0.002 });   // the "thud" of the teeth
       };
-      bite(t, 0.18, 45);
-      bite(t + 0.32, 0.22, 55);
-      return 0.6;
+      bite(t, 0.45, 110);                               // one bite, twice as long, same density (no pause)
+      return 0.5;
     },
     zap(t) {                                            // electric bzzzt: buzzing arc + sparks + snap
       const len = 0.6;
