@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type Dispatch } from "react";
-import { api, ApiError, type Preview } from "../api";
+import { api, ApiError, type OrderResult, type Preview } from "../api";
 import { colorById, euro, fontFamily, useConfig } from "../config";
 import { Nav, STEP_COLORS } from "../components/Chrome";
 import { TagSvg } from "../components/TagSvg";
 import { type Action, type CartItem, type State } from "../state";
 import { PreviewBox } from "./Wizard";
+import { celebrate } from "../sound";
 
 type P = { state: State; dispatch: Dispatch<Action> };
 
@@ -33,10 +34,15 @@ export function ReviewScreen({ state, dispatch }: P) {
       ...cart.map((c) => ({ preview_id: c.preview.preview_id, text_color: c.colorId })),
       { preview_id: cur.preview_id, text_color: d.colorId! },
     ];
+    // the names play as a tune, then the done screen
+    const done = (order: OrderResult) => {
+      celebrate([...state.cart.map((c) => c.name), d.name]);
+      dispatch({ type: "ORDER_OK", order });
+    };
     try {
       let cart = state.cart, cur = d.preview;
       try {
-        dispatch({ type: "ORDER_OK", order: await api.order(items(cart, cur), state.customer) });
+        done(await api.order(items(cart, cur), state.customer));
         return;
       } catch (e) {
         if (!(e instanceof ApiError) || e.code !== "preview_expired") throw e;
@@ -45,7 +51,7 @@ export function ReviewScreen({ state, dispatch }: P) {
       cart = await Promise.all(cart.map(async (c) => ({ ...c, preview: await api.preview(c.name, c.fontId, c.shapeId) })));
       cur = await api.preview(cur.name, d.fontId!, d.shapeId!);
       dispatch({ type: "REFRESH_PREVIEWS", cart, draft: cur });
-      dispatch({ type: "ORDER_OK", order: await api.order(items(cart, cur), state.customer) });
+      done(await api.order(items(cart, cur), state.customer));
     } catch (e) {
       const code = e instanceof ApiError ? e.code : "x";
       if (code === "closed" && e instanceof ApiError && e.message) { setError(e.message); setBusy(false); return; }

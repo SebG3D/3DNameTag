@@ -1,5 +1,5 @@
 {
-  "_comment": "Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till). Printer: type sim | prusalink. print_setup: null = 'active' from print.json.",
+  "_comment": "Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till; sound: bells|crunch|zap|roar|hiss|pop|none, played when sold). staff.sound: Kasse sounds + printer alerts on the staff page. Printer: type sim | prusalink. print_setup: null = 'active' from print.json. material: petg | pla, used for every plate started from then on.",
   "event_name": "Weihnachtsmarkt 2026",
   "base_color": {
     "name": "Blau",
@@ -48,6 +48,9 @@
     "idle_s": 90,
     "sound": true
   },
+  "staff": {
+    "sound": true
+  },
   "disabled_fonts": [],
   "disabled_shapes": [],
   "print_setup": null,
@@ -56,31 +59,36 @@
       "id": "plaetzchen",
       "name": "Plätzchenform",
       "emoji": "🍪",
-      "price_cents": 300
+      "price_cents": 300,
+      "sound": "crunch"
     },
     {
       "id": "pokemon",
       "name": "Pokemon",
       "emoji": "⚡",
-      "price_cents": 300
+      "price_cents": 300,
+      "sound": "zap"
     },
     {
       "id": "drache",
       "name": "Drache",
       "emoji": "🐉",
-      "price_cents": 300
+      "price_cents": 300,
+      "sound": "roar"
     },
     {
       "id": "schlange",
       "name": "Schlange",
       "emoji": "🐍",
-      "price_cents": 300
+      "price_cents": 300,
+      "sound": "hiss"
     },
     {
       "id": "sonstiges",
       "name": "Sonstiges",
       "emoji": "🛍️",
-      "price_cents": 0
+      "price_cents": 0,
+      "sound": "bells"
     }
   ],
   "staff_pin": "2468",

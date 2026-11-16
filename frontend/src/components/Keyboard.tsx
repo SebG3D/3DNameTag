@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { click } from "../sound";
+import { back as backSound, key as keySound } from "../sound";
 
 const ROWS = [
   ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"],
@@ -8,7 +8,7 @@ const ROWS = [
   ["Y", "X", "C", "V", "B", "N", "M", "ß"],
 ];
 
-/** QWERTZ capitals only. Backspace repeats when held (400 ms, then 80 ms). */
+/** QWERTZ capitals only. Each letter plays its note (sound.ts). Backspace repeats when held (400 ms, then 80 ms). */
 export function Keyboard({ onKey, onBackspace }: { onKey: (k: string) => void; onBackspace: () => void }) {
   const rep = useRef<{ t?: number; i?: number }>({});
   const back = useRef(onBackspace);
@@ -20,7 +20,7 @@ export function Keyboard({ onKey, onBackspace }: { onKey: (k: string) => void; o
   useEffect(() => stop, []);
   const startBack = () => {
     stop();
-    click();
+    backSound();
     back.current();
     rep.current.t = window.setTimeout(() => {
       rep.current.i = window.setInterval(() => back.current(), 80);
@@ -28,7 +28,7 @@ export function Keyboard({ onKey, onBackspace }: { onKey: (k: string) => void; o
   };
   const press = (k: string) => (e: React.PointerEvent) => {
     e.preventDefault();
-    click();
+    keySound(k);
     onKey(k);
   };
   return (

@@ -572,3 +572,22 @@ def test_shop_items_settings(cfg_env):
     booth.staff_update_settings(d)
     assert booth.staff_overview()["shop_items"][0]["price_cents"] == 450
     assert json.loads(path.read_text())["shop_items"][0]["price_cents"] == 450
+
+
+def test_shop_item_sounds_and_staff_sound(cfg_env):
+    import json
+    from booth.config import ConfigError, parse_config
+    booth, path = cfg_env
+    d = booth.staff_settings()["settings"]
+    # old booth.json without sounds: start items get theirs, unknown ones bells
+    d["shop_items"] = [{"id": "drache", "name": "Drache", "price_cents": 450},
+                       {"id": "keks", "name": "Keks", "price_cents": 100}]
+    d["staff"] = {"sound": False}
+    booth.staff_update_settings(d)
+    ov = booth.staff_overview()
+    assert [i["sound"] for i in ov["shop_items"]] == ["roar", "bells"] and ov["staff_sound"] is False
+    saved = json.loads(path.read_text())
+    assert saved["staff"] == {"sound": False} and saved["shop_items"][1]["sound"] == "bells"
+    saved["shop_items"][0]["sound"] = "moo"
+    with pytest.raises(ConfigError):
+        parse_config(saved)

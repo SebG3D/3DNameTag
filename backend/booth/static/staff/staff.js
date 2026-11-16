@@ -327,9 +327,37 @@ async function syncClock() {
   catch (e) { if (e.message !== "login") alert("Geht nur auf dem Kiosk-Pi: " + e.message); }
 }
 
+// ---------------------------------------------------------------- printer alerts (sfx.js)
+// compare with the previous poll: plate done / colour change / error, new order
+let seen = null;
+function alerts() {
+  sfx.setEnabled(data.staff_sound !== false);
+  const plates = Object.fromEntries(data.plates.map((p) => [p.id, p.status]));
+  const maxOrder = Math.max(0, ...data.orders.map((o) => o.id));
+  const now = Date.now();
+  if (seen) {
+    const changed = (want) => data.plates.some((p) => p.status === want && seen.plates[p.id] !== undefined && seen.plates[p.id] !== want);
+    if (changed("failed") || (data.printer.state === "error" && seen.printer !== "error")) sfx.play("error");
+    else if (changed("color_change")) { sfx.play("colorChange"); seen.remind = now; }
+    else if (changed("done")) sfx.play("plateDone");
+    else if (maxOrder > seen.maxOrder) sfx.play("newOrder");
+    // nobody changed the filament yet: remind every minute
+    if (data.plates.some((p) => p.status === "color_change") && now - (seen.remind || now) > 60000) {
+      sfx.play("colorChange"); seen.remind = now;
+    }
+  }
+  seen = { plates, maxOrder, printer: data.printer.state, remind: seen?.remind };
+}
+
+function renderSoundBtn() {
+  $("soundBtn").textContent = sfx.muted ? "🔇" : "🔊";
+  $("soundBtn").classList.toggle("hidden", data && data.staff_sound === false);
+}
+$("soundBtn").onclick = () => { sfx.setMuted(!sfx.muted); renderSoundBtn(); if (!sfx.muted) sfx.play("pop"); };
+
 async function refresh() {
   if (!token) return showLogin();
-  try { data = await api("/api/staff/overview"); render(); }
+  try { data = await api("/api/staff/overview"); alerts(); renderSoundBtn(); render(); }
   catch (e) { if (e.message !== "login") { $("printerChip").textContent = "📵 Server nicht erreichbar"; $("printerChip").className = "status bad"; } }
 }
 

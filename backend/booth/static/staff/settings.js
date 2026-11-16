@@ -70,8 +70,11 @@ function renderSettings() {
         <input type="text" class="emoji" data-semoji="${i}" value="${esc(it.emoji || "")}" maxlength="8" placeholder="🛍️">
         <input type="text" data-sname="${i}" value="${esc(it.name)}" maxlength="20" placeholder="Name">
         <input type="number" class="price" step="0.10" min="0" data-sprice="${i}" value="${(it.price_cents / 100).toFixed(2)}">
+        <select data-ssound="${i}" title="Ton beim Antippen an der Kasse">${sfx.NAMES.map((n) =>
+          `<option value="${n}" ${(it.sound || "bells") === n ? "selected" : ""}>${sfx.LABELS[n]}</option>`).join("")}</select>
+        <button class="small" data-playitem="${i}" title="Ton anhören">▶</button>
         <button class="danger small" data-delitem="${i}">✕</button></div>`).join("")}
-      <small>Preis 0 = wird an der Kasse gefragt (z. B. Sonstiges).</small>
+      <small>Preis 0 = wird an der Kasse gefragt (z. B. Sonstiges). Der Ton spielt, wenn man den Artikel an der Kasse antippt.</small>
       <button class="small" id="addItem">+ Artikel</button></div>
   </section>
 
@@ -91,7 +94,8 @@ function renderSettings() {
     </div>
     <div class="grid2">
       ${field("Inaktivität bis „Bist du noch da?“ (s)", num("kiosk.idle_s", d.kiosk.idle_s, 'min="20" max="600"'))}
-      <label class="check" style="margin-top:28px"><input type="checkbox" id="sound" ${d.kiosk.sound ? "checked" : ""}> Tastenklick-Ton</label>
+      <label class="check" style="margin-top:28px"><input type="checkbox" id="sound" ${d.kiosk.sound ? "checked" : ""}> Töne am Kiosk (Namens-Melodie)</label>
+      <label class="check"><input type="checkbox" id="staffSound" ${d.staff?.sound !== false ? "checked" : ""}> Töne hier bei den Betreuern (Kasse, Drucker fertig/Farbwechsel/Fehler)</label>
     </div>
     <p class="muted">Der Kiosk übernimmt Änderungen, sobald er wieder auf dem Startbildschirm ist.</p>
   </section>
@@ -142,8 +146,10 @@ function renderSettings() {
     S.settings.text_colors.push({ id: slug("neu", taken), name: "", hex: "#888888", _new: true }); renderSettings(); };
   document.querySelectorAll("[data-delcolor]").forEach((b) => b.onclick = () => {
     collect(); S.settings.text_colors.splice(+b.dataset.delcolor, 1); renderSettings(); });
-  $("addItem").onclick = () => { collect(); S.settings.shop_items.push({ id: "", name: "", emoji: "", price_cents: 0 });
+  $("addItem").onclick = () => { collect(); S.settings.shop_items.push({ id: "", name: "", emoji: "", price_cents: 0, sound: "bells" });
     renderSettings(); };
+  document.querySelectorAll("[data-playitem]").forEach((b) => b.onclick = () => {
+    sfx.force(document.querySelector(`[data-ssound="${b.dataset.playitem}"]`).value); });
   document.querySelectorAll("[data-delitem]").forEach((b) => b.onclick = () => {
     collect(); S.settings.shop_items.splice(+b.dataset.delitem, 1); renderSettings(); });
   $("testPrinter").onclick = testPrinter;
@@ -183,11 +189,13 @@ function collect() {
     const id = it.id || slug(name || "artikel", new Set([...itemIds, ...d.shop_items.map((x) => x.id).filter(Boolean)]));
     itemIds.add(id);
     return { id, name, emoji: document.querySelector(`[data-semoji="${i}"]`).value.trim(),
-      price_cents: Math.round(Number(document.querySelector(`[data-sprice="${i}"]`).value || 0) * 100) };
+      price_cents: Math.round(Number(document.querySelector(`[data-sprice="${i}"]`).value || 0) * 100),
+      sound: document.querySelector(`[data-ssound="${i}"]`).value };
   });
   d.disabled_fonts = [...document.querySelectorAll("[data-font]")].filter((x) => !x.checked).map((x) => x.dataset.font);
   d.disabled_shapes = [...document.querySelectorAll("[data-shape]")].filter((x) => !x.checked).map((x) => x.dataset.shape);
   d.kiosk.sound = $("sound").checked;
+  d.staff = { ...(d.staff || {}), sound: $("staffSound").checked };
   const def = S.setups.find((s) => s.default);
   d.print_setup = $("setup").value === def?.name ? null : $("setup").value;
   if ($("newPin")) d.staff_pin = $("newPin").value.trim();

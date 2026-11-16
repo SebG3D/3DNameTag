@@ -34,6 +34,7 @@ function renderCartBadge() {
 }
 
 function addItem(it, price) {
+  sfx.play(it.sound || "bells");
   const p = price ?? it.price_cents;
   const same = cart.lines.find((l) => l.id === it.id && l.price_cents === p);
   if (same) same.qty = Math.min(99, same.qty + 1);
@@ -158,6 +159,7 @@ async function pay() {
     const r = await api("/api/staff/sales", { method: "POST", body: JSON.stringify({
       order_id: o ? o.id : null, given_cents: given,
       items: cart.lines.map((l) => ({ id: l.id, qty: l.qty, price_cents: l.price_cents })) }) });
+    sfx.sale(!!o, total, cart.lines.reduce((s, l) => s + l.qty, 0) + (o ? o.tags.length : 0));
     cart.order = null; cart.lines = []; cart.given = null;
     tell(`<p class="q">✓ Bezahlt</p>${r.change_cents > 0 ? `<p class="bigmoney">Rückgeld ${euro(r.change_cents)}</p>` : ""}
       ${o ? (r.picked_up ? `<p>🎁 Anhänger ${orderLabel(o)} mitgeben!</p>`

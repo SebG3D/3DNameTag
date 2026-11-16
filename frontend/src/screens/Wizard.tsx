@@ -7,6 +7,7 @@ import { TagSvg } from "../components/TagSvg";
 import { useIcons } from "../icons";
 import type { Paths } from "../api";
 import { cleanName, type Action, type State } from "../state";
+import { pop } from "../sound";
 
 type P = { state: State; dispatch: Dispatch<Action> };
 
@@ -53,10 +54,10 @@ export function FontScreen({ state, dispatch }: P) {
     <div className="screen">
       <h1>Such dir eine Schrift aus!</h1>
       <div className="grid grid-3">
-        {cfg.fonts.map((f) => {
+        {cfg.fonts.map((f, i) => {
           const sel = state.draft.fontId === f.id;
           return (
-            <button key={f.id} aria-label={f.label} className={sel ? "card sel" : "card"} onClick={() => dispatch({ type: "SET_FONT", fontId: f.id })}>
+            <button key={f.id} aria-label={f.label} className={sel ? "card sel" : "card"} onClick={() => { pop(i); dispatch({ type: "SET_FONT", fontId: f.id }); }}>
               <span className="font-sample" style={{ fontFamily: fontFamily(f.id), fontSize: name.length > 8 ? 40 : 54 }}>{name}</span>
               {sel && <span className="check">✓</span>}
             </button>
@@ -96,13 +97,13 @@ export function ShapeScreen({ state, dispatch }: P) {
         <p className="hint">Dein Name ist für diese Schrift zu lang.<br />Geh zurück und probier eine schmalere Schrift!</p>
       ) : (
         <div className={cfg.shapes.length > 3 ? "grid grid-4" : "grid grid-3"}>
-          {cfg.shapes.map((s) => {
+          {cfg.shapes.map((s, i) => {
             const ok = fit?.[s.id] !== false;
             const sel = shapeId === s.id;
             const ic = real[s.id] ?? icons[s.id];
             return (
               <button key={s.id} disabled={!ok} className={sel ? "card shape sel" : "card shape"}
-                onClick={() => dispatch({ type: "SET_SHAPE", shapeId: s.id })}>
+                onClick={() => { pop(i); dispatch({ type: "SET_SHAPE", shapeId: s.id }); }}>
                 <div className="shape-icon">
                   {ic ? <TagSvg outline={ic.outline} text={ic.text} baseHex={cfg.base_color.hex} textHex={contrastHex(cfg)} /> : <Spinner />}
                 </div>
@@ -171,11 +172,11 @@ export function ColorScreen({ state, dispatch }: P) {
       </p>
       <PreviewBox state={state} dispatch={dispatch} />
       <div className="colors">
-        {cfg.text_colors.map((c) => {
+        {cfg.text_colors.map((c, i) => {
           const sel = state.draft.colorId === c.id;
           return (
             <button key={c.id} aria-label={c.name} className={sel ? "swatch sel" : "swatch"} style={{ background: c.hex }}
-              onClick={() => dispatch({ type: "SET_COLOR", colorId: c.id })}>
+              onClick={() => { pop(i); dispatch({ type: "SET_COLOR", colorId: c.id }); }}>
               <span className="swatch-label">{c.name}</span>
             </button>
           );

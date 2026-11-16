@@ -210,6 +210,7 @@ button.shop .sprice { font-size: 24px; color: #1d6b2e; }
 .keys button { font-size: 36px; min-height: 80px; }
 .narrow .colorrow input.emoji { flex: none; width: 64px; text-align: center; }
 .narrow .colorrow input.price { flex: none; width: 110px; }
+.narrow .colorrow select { flex: none; width: 160px; }
 
 /* on-screen keyboard (osk.js, staff screen with ?osk=1) */
 #osk { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: #d5d8e2; padding: 8px 10px 12px;

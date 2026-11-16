@@ -668,7 +668,7 @@ class Booth:
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
                 "setup": self.setup.name, "material": self.setup.material, "eta_all_s": int(self.eta_s()), "today": self._day(),
                 "ordering": self.ordering_state(), "closed_messages": CLOSED_MESSAGES,
-                "shop_items": self.cfg.shop_items,
+                "shop_items": self.cfg.shop_items, "staff_sound": self.cfg.staff_sound,
                 "server_time": time.time()}
 
     def staff_paid(self, oid: int) -> None:

@@ -14,18 +14,20 @@ from nametag import REPO
 CONFIG = REPO / "config" / "booth.json"
 COMMENT = ("Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). "
            "Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). "
-           "shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till). Printer: type sim | prusalink. print_setup: null = 'active' from print.json. material: petg | pla, used for every plate started from then on.")
+           "shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till; sound: bells|crunch|zap|roar|hiss|pop|none, played when sold). staff.sound: Kasse sounds + printer alerts on the staff page. Printer: type sim | prusalink. print_setup: null = 'active' from print.json. material: petg | pla, used for every plate started from then on.")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _ID = re.compile(r"^[a-z0-9_-]{1,20}$")
 SHOP_MAX_CENTS = 100000
 # start values when booth.json has no shop_items yet (prices are placeholders, staff set them)
 DEFAULT_SHOP_ITEMS = [
-    {"id": "plaetzchen", "name": "Plätzchenform", "emoji": "🍪", "price_cents": 300},
-    {"id": "pokemon", "name": "Pokemon", "emoji": "⚡", "price_cents": 300},
-    {"id": "drache", "name": "Drache", "emoji": "🐉", "price_cents": 300},
-    {"id": "schlange", "name": "Schlange", "emoji": "🐍", "price_cents": 300},
-    {"id": "sonstiges", "name": "Sonstiges", "emoji": "🛍️", "price_cents": 0},
+    {"id": "plaetzchen", "name": "Plätzchenform", "emoji": "🍪", "price_cents": 300, "sound": "crunch"},
+    {"id": "pokemon", "name": "Pokemon", "emoji": "⚡", "price_cents": 300, "sound": "zap"},
+    {"id": "drache", "name": "Drache", "emoji": "🐉", "price_cents": 300, "sound": "roar"},
+    {"id": "schlange", "name": "Schlange", "emoji": "🐍", "price_cents": 300, "sound": "hiss"},
+    {"id": "sonstiges", "name": "Sonstiges", "emoji": "🛍️", "price_cents": 0, "sound": "bells"},
 ]
+# sounds the staff page can play for a sold item (synthesized in static/staff/sfx.js)
+SHOP_SOUNDS = ("bells", "crunch", "zap", "roar", "hiss", "pop", "none")
 
 
 @dataclass
@@ -48,6 +50,7 @@ class BoothConfig:
                                      # (heat-up, mesh levelling, end G-code; Core One, warm bed)
     kiosk_idle_s: int = 90
     kiosk_sound: bool = True
+    staff_sound: bool = True         # staff page: Kasse sounds + printer alerts
     print_setup: str | None = None
     material: str = "petg"           # filament for plates started from now on (print.json setup variant)
     shop_items: list[dict] = field(default_factory=lambda: [dict(i) for i in DEFAULT_SHOP_ITEMS])
@@ -125,8 +128,12 @@ def _shop_items(items) -> list[dict]:
         emoji = it.get("emoji", "")
         if not isinstance(emoji, str) or len(emoji) > 8:
             raise ConfigError(f"Kasse-Artikel {name}: Symbol zu lang")
+        # older booth.json without sounds: the start items get theirs, others bells
+        sound = it.get("sound") or next((d["sound"] for d in DEFAULT_SHOP_ITEMS if d["id"] == it["id"]), "bells")
+        if sound not in SHOP_SOUNDS:
+            raise ConfigError(f"Kasse-Artikel {name}: unbekannter Ton {sound}")
         out.append({"id": it["id"], "name": name, "emoji": emoji.strip(),
-                    "price_cents": _int(it, "price_cents", 0, SHOP_MAX_CENTS)})
+                    "price_cents": _int(it, "price_cents", 0, SHOP_MAX_CENTS), "sound": sound})
     if len({i["id"] for i in out}) != len(out):
         raise ConfigError("doppelte Kasse-Artikel-id")
     return out
@@ -172,6 +179,7 @@ def parse_config(c: dict) -> BoothConfig:
             disabled_shapes=[str(x) for x in c.get("disabled_shapes", [])],
             kiosk_idle_s=_int({"idle_s": k.get("idle_s", 90)}, "idle_s", 20, 600),
             kiosk_sound=bool(k.get("sound", True)),
+            staff_sound=bool((c.get("staff") or {}).get("sound", True)),
             print_setup=c.get("print_setup") or None,
             material=_material(c.get("material", "petg")),
             shop_items=_shop_items(c.get("shop_items", DEFAULT_SHOP_ITEMS)),
@@ -194,6 +202,7 @@ def config_dict(cfg: BoothConfig) -> dict:
         "plate": {"max_tags": cfg.plate_max_tags, "max_wait_min": cfg.plate_max_wait_min,
                   "change_min": cfg.plate_change_min, "prep_min": cfg.plate_prep_min},
         "kiosk": {"idle_s": cfg.kiosk_idle_s, "sound": cfg.kiosk_sound},
+        "staff": {"sound": cfg.staff_sound},
         "disabled_fonts": cfg.disabled_fonts,
         "disabled_shapes": cfg.disabled_shapes,
         "print_setup": cfg.print_setup,
