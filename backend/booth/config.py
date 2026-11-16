@@ -14,20 +14,20 @@ from nametag import REPO
 CONFIG = REPO / "config" / "booth.json"
 COMMENT = ("Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). "
            "Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). "
-           "shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till; sound: bells|crunch|zap|roar|hiss|pop|none, played when sold). staff.sound: Kasse sounds + printer alerts on the staff page. Printer: type sim | prusalink. print_setup: null = 'active' from print.json. material: petg | pla, used for every plate started from then on.")
+           "shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till; sound: bells|crunch|caught|zap|roar|hiss|pop|none, played when sold). staff.sound: Kasse sounds + printer alerts on the staff page. Printer: type sim | prusalink. print_setup: null = 'active' from print.json. material: petg | pla, used for every plate started from then on.")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _ID = re.compile(r"^[a-z0-9_-]{1,20}$")
 SHOP_MAX_CENTS = 100000
 # start values when booth.json has no shop_items yet (prices are placeholders, staff set them)
 DEFAULT_SHOP_ITEMS = [
     {"id": "plaetzchen", "name": "Plätzchenform", "emoji": "🍪", "price_cents": 300, "sound": "crunch"},
-    {"id": "pokemon", "name": "Pokemon", "emoji": "⚡", "price_cents": 300, "sound": "zap"},
+    {"id": "pokemon", "name": "Pokemon", "emoji": "⚡", "price_cents": 300, "sound": "caught"},
     {"id": "drache", "name": "Drache", "emoji": "🐉", "price_cents": 300, "sound": "roar"},
     {"id": "schlange", "name": "Schlange", "emoji": "🐍", "price_cents": 300, "sound": "hiss"},
     {"id": "sonstiges", "name": "Sonstiges", "emoji": "🛍️", "price_cents": 0, "sound": "bells"},
 ]
 # sounds the staff page can play for a sold item (synthesized in static/staff/sfx.js)
-SHOP_SOUNDS = ("bells", "crunch", "zap", "roar", "hiss", "pop", "none")
+SHOP_SOUNDS = ("bells", "crunch", "caught", "zap", "roar", "hiss", "pop", "none")
 
 
 @dataclass

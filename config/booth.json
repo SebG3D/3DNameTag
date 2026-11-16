@@ -1,5 +1,5 @@
 {
-  "_comment": "Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till; sound: bells|crunch|zap|roar|hiss|pop|none, played when sold). staff.sound: Kasse sounds + printer alerts on the staff page. Printer: type sim | prusalink. print_setup: null = 'active' from print.json. material: petg | pla, used for every plate started from then on.",
+  "_comment": "Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till; sound: bells|crunch|caught|zap|roar|hiss|pop|none, played when sold). staff.sound: Kasse sounds + printer alerts on the staff page. Printer: type sim | prusalink. print_setup: null = 'active' from print.json. material: petg | pla, used for every plate started from then on.",
   "event_name": "Weihnachtsmarkt 2026",
   "base_color": {
     "name": "Blau",
@@ -67,7 +67,7 @@
       "name": "Pokemon",
       "emoji": "⚡",
       "price_cents": 300,
-      "sound": "zap"
+      "sound": "caught"
     },
     {
       "id": "drache",

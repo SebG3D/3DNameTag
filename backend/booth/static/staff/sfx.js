@@ -58,6 +58,32 @@ const sfx = (() => {
       tone(t, f * m, dur / Math.sqrt(m), { vol: vol * v, attack: 0.002 }));
   }
 
+  // Game-Boy-like pulse wave (25 % duty): thin, bright, "8-bit"
+  let pulse = null;
+  function pulseWave() {
+    if (!pulse) {
+      const n = 32, re = new Float32Array(n), im = new Float32Array(n);
+      for (let k = 1; k < n; k++) re[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * 0.25);
+      pulse = ctx.createPeriodicWave(re, im);
+    }
+    return pulse;
+  }
+  function chip(t, freq, dur, vol = 0.12, vibrato = false) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.setPeriodicWave(pulseWave());
+    o.frequency.setValueAtTime(freq, t);
+    if (vibrato) {                                      // the long last note wobbles
+      const lfo = ctx.createOscillator(), lg = ctx.createGain();
+      lfo.frequency.value = 6; lg.gain.value = freq * 0.012;
+      lfo.connect(lg).connect(o.frequency); lfo.start(t + 0.12); lfo.stop(t + dur);
+    }
+    g.gain.setValueAtTime(vol, t);
+    g.gain.setValueAtTime(vol, t + dur * 0.8);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(out);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+
   // each returns its length in seconds, so a sale can play them one after another
   const SOUNDS = {
     bells(t) {                                          // sleigh bells + a bell
@@ -106,6 +132,22 @@ const sfx = (() => {
       noise(t + len, 0.05, { type: "highpass", freq: 1500, vol: 0.6, attack: 0.001 });
       tone(t + len, 1800, 0.06, { type: "square", to: 400, vol: 0.12 });
       return len + 0.1;
+    },
+    caught(t) {                                         // "gotcha!": ball clicks shut, then an 8-bit victory tune (our own melody)
+      noise(t, 0.03, { type: "highpass", freq: 2000, vol: 0.5, attack: 0.001 });
+      chip(t, 1568, 0.04, 0.1); chip(t + 0.05, 2093, 0.05, 0.1);
+      const s = t + 0.25, b = 0.11;                     // one beat step
+      const N = { G4: 392, A4: 440, C5: 523, D5: 587, E5: 659, F5: 698, G5: 784, A5: 880, C6: 1047, C3: 131, F3: 175, G3: 196 };
+      // melody: [note, start step, length steps]
+      [["C5", 0, 1], ["E5", 1, 1], ["G5", 2, 1], ["C6", 3, 2],
+       ["A5", 5, 1], ["G5", 6, 1], ["F5", 7, 1], ["A5", 8, 1], ["G5", 9, 1], ["E5", 10, 1],
+       ["D5", 11, 1], ["G5", 12, 1], ["C6", 13, 6]].forEach(([n, at, len]) =>
+        chip(s + at * b, N[n], len * b * 0.92, 0.13, len >= 6));
+      // bass + harmony (second voice, softer)
+      [["C3", 0, 4], ["F3", 5, 3], ["G3", 9, 3], ["C3", 13, 6]].forEach(([n, at, len]) =>
+        tone(s + at * b, N[n], len * b, { type: "triangle", vol: 0.25, attack: 0.01 }));
+      [["E5", 13, 6], ["G4", 13, 6]].forEach(([n, at, len]) => chip(s + at * b, N[n], len * b * 0.92, 0.05));
+      return 0.25 + 19 * b + 0.1;
     },
     roar(t) {                                           // low growl, swelling and falling
       const f = ctx.createBiquadFilter(), g = ctx.createGain();
@@ -182,8 +224,8 @@ const sfx = (() => {
   }
 
   return {
-    play, force, sale, NAMES: ["bells", "crunch", "zap", "roar", "hiss", "pop", "none"],
-    LABELS: { bells: "🔔 Glöckchen", crunch: "🍪 Knusper", zap: "⚡ Blitz", roar: "🐉 Brüllen",
+    play, force, sale, NAMES: ["bells", "crunch", "caught", "zap", "roar", "hiss", "pop", "none"],
+    LABELS: { bells: "🔔 Glöckchen", crunch: "🍪 Knusper", caught: "🎉 Gefangen!", zap: "⚡ Blitz", roar: "🐉 Brüllen",
       hiss: "🐍 Zischen", pop: "🫧 Plopp", none: "🔇 kein Ton" },
     setEnabled(on) { enabled = on; },
     get muted() { return muted; },
