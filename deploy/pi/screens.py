@@ -15,8 +15,11 @@ What it writes:
     labwc's <touch deviceName mapToOutput> can't tell them apart, and labwc 0.20
     ignores WL_OUTPUT: an unmapped touch panel spans the whole desktop, i.e. both
     screens). Which panel is which is found by asking for a tap on the staff screen.
-    So: do not swap the touch USB cables or change the screen layout afterwards
-    (if you do, run this again).
+    So: do not swap the touch USB cables afterwards (if you do, run this again).
+  * kanshi profile ~/.config/kanshi/config: fixed layout, kiosk left, staff right.
+    Without it labwc arranges the screens in the order they come up, which can
+    flip between boots, and the calibration (left/right half) then sends every
+    tap to the other screen.
   * autostart line "nametag-kiosk staff".
 Takes effect after a reboot.
 """
@@ -25,6 +28,7 @@ import argparse, glob, json, os, pwd, re, select, shutil, subprocess, sys, time
 UDEV_RULE = "/etc/udev/rules.d/99-nametag-touch.rules"
 BEGIN, END = "<!-- nametag-screens begin -->", "<!-- nametag-screens end -->"
 STAFF_LINE = "/usr/local/bin/nametag-kiosk staff &"
+KANSHI_MARK = "# nametag booth (deploy/pi/screens.py)"
 
 
 def connected_outputs():
@@ -113,6 +117,32 @@ def write_udev(mapping):
     subprocess.run(["udevadm", "trigger", "--subsystem-match=input", "--action=change"], check=False)
 
 
+def pinned_boxes(boxes, kiosk, staff):
+    """layout we pin with kanshi: kiosk at 0,0, staff to its right (top aligned)."""
+    kx, ky, kw, kh = boxes[kiosk]
+    _, _, sw, sh = boxes[staff]
+    return {kiosk: (0, 0, kw, kh), staff: (int(kw), 0, sw, sh)}
+
+
+def write_kanshi(home, uid, gid, layout):
+    """layout {output: box} -> kanshi profile; None -> remove ours (a foreign config stays)."""
+    path = os.path.join(home, ".config/kanshi/config")
+    old = open(path).read() if os.path.exists(path) else ""
+    if old.strip() and not old.startswith(KANSHI_MARK):
+        shutil.copy(path, path + ".bak")
+    if layout is None:
+        if old.startswith(KANSHI_MARK):
+            open(path, "w").write("")
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    outs = "".join(f"  output {o} enable position {int(b[0])},{int(b[1])}\n" for o, b in layout.items())
+    open(path, "w").write(f"{KANSHI_MARK}: fixed layout, kiosk left, staff right;\n"
+                          f"# the touch calibration (udev 99-nametag-touch.rules) relies on it\n"
+                          f"profile nametag {{\n{outs}}}\n")
+    os.chown(path, uid, gid)
+    os.chown(os.path.dirname(path), uid, gid)
+
+
 def rule(app_id, output):
     # Chromium --kiosk is already full screen when mapped, and labwc does not move
     # full-screen windows: leave full screen, move, full screen again.
@@ -165,6 +195,7 @@ def main():
     if a.off:
         write_rc(home, uid, gid, None, None)
         write_udev({})
+        write_kanshi(home, uid, gid, None)
         set_autostart(home, uid, gid, False)
         print("staff screen off: kiosk only (reboot)")
         return
@@ -183,7 +214,8 @@ def main():
     boxes = output_boxes(a.user, uid)
     if staff not in boxes or kiosk not in boxes:
         sys.exit(f"screens not active in the desktop: {boxes}")
-    print("desktop layout:", ", ".join(f"{k} {int(v[2])}x{int(v[3])}+{v[0]}+{v[1]}" for k, v in boxes.items()))
+    boxes = pinned_boxes(boxes, kiosk, staff)
+    print("desktop layout (pinned):", ", ".join(f"{k} {int(v[2])}x{int(v[3])}+{v[0]}+{v[1]}" for k, v in boxes.items()))
     touch = touchscreens()
     mapping = {}
     if not touch:
@@ -202,8 +234,9 @@ def main():
 
     write_rc(home, uid, gid, kiosk, staff)
     write_udev(mapping)
+    write_kanshi(home, uid, gid, boxes)
     set_autostart(home, uid, gid, True)
-    print("staff screen set up (window rules, touch mapping, autostart): reboot to apply")
+    print("staff screen set up (screen layout, window rules, touch mapping, autostart): reboot to apply")
 
 
 if __name__ == "__main__":

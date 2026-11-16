@@ -67,7 +67,10 @@ spans both screens). **Don't swap the touch USB cables or change the screen layo
 afterwards.** If you do, run `--staff-screen` again (or just `sudo python3 deploy/pi/screens.py
 --user <user> --staff HDMI-A-2`). It also writes
 labwc window rules (marked block in `~/.config/labwc/rc.xml`: app id `nametag-kiosk` /
-`nametag-staff` to their screen) and adds `nametag-kiosk staff` to the autostart. Then reboot.
+`nametag-staff` to their screen), pins the screen layout in `~/.config/kanshi/config` (kiosk
+left at 0,0, staff right; without it labwc arranges the screens in the order they come up, which
+flipped after a reboot and sent every tap to the other screen) and adds `nametag-kiosk staff` to
+the autostart. Then reboot.
 Re-running `install.sh` without the option leaves this setup as it is. The staff login
 has an on-screen PIN pad, and the staff screen opens `/staff/?osk=1`, which turns on the
 on-screen keyboard (`static/staff/osk.js`) for all text, number and time fields. Without
