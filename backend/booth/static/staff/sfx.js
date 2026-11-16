@@ -65,20 +65,48 @@ const sfx = (() => {
       bell(t, 1319, 0.9, 0.2); bell(t + 0.18, 1568, 0.9, 0.2);
       return 0.9;
     },
-    crunch(t) {                                         // biting a cookie
-      for (let i = 0; i < 6; i++) {
-        const at = t + i * 0.07 + Math.random() * 0.03;
-        noise(at, 0.05 + Math.random() * 0.04, { freq: 1200 + Math.random() * 2500, q: 0.8, vol: 0.5 });
-      }
-      return 0.55;
+    crunch(t) {                                         // two bites into a crisp cookie
+      // a crunch is many tiny, irregular cracks (grains), not a few puffs of noise
+      const bite = (start, len, grains) => {
+        for (let i = 0; i < grains; i++) {
+          const at = start + Math.pow(Math.random(), 1.6) * len;           // dense at the start of the bite
+          noise(at, 0.004 + Math.random() * 0.018, {
+            freq: 900 + Math.random() * 4500, q: 0.6 + Math.random() * 2,
+            vol: 0.25 + Math.random() * 0.5, attack: 0.001 });
+        }
+        noise(start, 0.06, { type: "lowpass", freq: 600, vol: 0.35, attack: 0.002 });   // the "thud" of the teeth
+      };
+      bite(t, 0.18, 45);
+      bite(t + 0.32, 0.22, 55);
+      return 0.6;
     },
-    zap(t) {                                            // electric zap, twice
-      for (const at of [t, t + 0.22]) {
-        tone(at, 2400, 0.2, { type: "sawtooth", to: 150, vol: 0.18 });
-        tone(at, 1800, 0.2, { type: "square", to: 90, vol: 0.08 });
-        noise(at, 0.12, { type: "highpass", freq: 3000, vol: 0.12 });
+    zap(t) {                                            // electric bzzzt: buzzing arc + sparks + snap
+      const len = 0.6;
+      const shape = ctx.createWaveShaper(), g = ctx.createGain();
+      const curve = new Float32Array(256);
+      for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 6); }
+      shape.curve = curve;                              // hard clipping = harsh electric buzz
+      g.gain.setValueAtTime(0.0001, t);
+      // the arc flickers: random level every 20 ms
+      for (let at = 0; at < len; at += 0.02) g.gain.setValueAtTime(0.08 + Math.random() * 0.22, t + at);
+      g.gain.setValueAtTime(0.0001, t + len);
+      shape.connect(g).connect(out);
+      for (const fr of [110, 113.5, 220.7]) {
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(fr, t);
+        for (let at = 0.03; at < len; at += 0.03) o.frequency.setValueAtTime(fr * (0.92 + Math.random() * 0.16), t + at);
+        o.connect(shape); o.start(t); o.stop(t + len + 0.02);
       }
-      return 0.5;
+      // sparks: short bright cracks scattered over the buzz
+      for (let i = 0; i < 18; i++) {
+        noise(t + Math.random() * len, 0.006 + Math.random() * 0.02,
+          { type: "highpass", freq: 2500 + Math.random() * 4000, vol: 0.2 + Math.random() * 0.35, attack: 0.001 });
+      }
+      // final snap
+      noise(t + len, 0.05, { type: "highpass", freq: 1500, vol: 0.6, attack: 0.001 });
+      tone(t + len, 1800, 0.06, { type: "square", to: 400, vol: 0.12 });
+      return len + 0.1;
     },
     roar(t) {                                           // low growl, swelling and falling
       const f = ctx.createBiquadFilter(), g = ctx.createGain();
