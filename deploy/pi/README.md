@@ -69,7 +69,9 @@ afterwards.** If you do, run `--staff-screen` again (or just `sudo python3 deplo
 labwc window rules (marked block in `~/.config/labwc/rc.xml`: app id `nametag-kiosk` /
 `nametag-staff` to their screen) and adds `nametag-kiosk staff` to the autostart. Then reboot.
 Re-running `install.sh` without the option leaves this setup as it is. The staff login
-has an on-screen PIN pad. Text fields in the settings still need a keyboard (or use a phone).
+has an on-screen PIN pad, and the staff screen opens `/staff/?osk=1`, which turns on the
+on-screen keyboard (`static/staff/osk.js`) for all text, number and time fields (phones
+without `?osk=1` keep their own keyboard; `?osk=0` turns it off again).
 
 ## 3. Printer (Core One)
 

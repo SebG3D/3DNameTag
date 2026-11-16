@@ -9,7 +9,7 @@ CHROMIUM=chromium
 ROLE="${1:-kiosk}"
 case "$ROLE" in
     kiosk) URL="http://127.0.0.1:8080/kiosk/" ;;
-    staff) URL="http://127.0.0.1:8080/staff/" ;;
+    staff) URL="http://127.0.0.1:8080/staff/?osk=1" ;;   # osk = on-screen keyboard
     *) echo "usage: $0 [kiosk|staff]" >&2; exit 2 ;;
 esac
 

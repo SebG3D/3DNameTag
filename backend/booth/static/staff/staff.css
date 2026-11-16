@@ -206,3 +206,23 @@ button.shop .sprice { font-size: 24px; color: #1d6b2e; }
 .keys button { font-size: 36px; min-height: 80px; }
 .narrow .colorrow input.emoji { flex: none; width: 64px; text-align: center; }
 .narrow .colorrow input.price { flex: none; width: 110px; }
+
+/* on-screen keyboard (osk.js, staff screen with ?osk=1) */
+#osk { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: #d5d8e2; padding: 8px 10px 12px;
+  box-shadow: 0 -4px 16px rgba(0,0,0,.18); user-select: none; touch-action: none; }
+.osk-top { display: flex; gap: 16px; align-items: baseline; max-width: 1500px; margin: 0 auto 8px; padding: 0 6px; min-height: 40px; }
+.osk-label { color: #555; font-size: 22px; white-space: nowrap; }
+.osk-value { flex: 1; font-size: 30px; font-weight: 700; background: #fff; border-radius: 10px; padding: 2px 14px;
+  min-height: 42px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: ltr; }
+.osk-keys { max-width: 1500px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+#osk.osk-narrow .osk-keys { max-width: 520px; }
+.osk-row { display: flex; gap: 8px; }
+.osk-row button { flex: 1 1 0; min-width: 0; min-height: 72px; padding: 0; font-size: 32px; font-weight: 600;
+  background: #fff; border-radius: 12px; box-shadow: 0 2px 0 #aab; }
+.osk-row button.mod { background: #b9bdcc; font-size: 26px; }
+.osk-row button.mod.on { background: #2e9e44; color: #fff; }
+.osk-row button.space { flex-grow: 5; }
+.osk-row button.done { flex-grow: 2; background: #2e9e44; color: #fff; font-size: 28px; }
+.osk-row button.down { filter: brightness(.8); transform: translateY(2px); box-shadow: none; }
+body.osk-open { padding-bottom: var(--osk-h, 480px); }
+body.osk-open .overlay { bottom: var(--osk-h, 480px); overflow-y: auto; align-items: safe center; }
