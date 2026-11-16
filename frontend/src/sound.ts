@@ -13,9 +13,13 @@ function audio(): AudioContext | null {
   try {
     if (!ctx) {
       ctx = new AudioContext();
+      // the display speaker is USB-powered: long loud sounds made the screen drop out,
+      // so keep the level moderate and limit peaks
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -18; comp.ratio.value = 8;
       out = ctx.createGain();
-      out.gain.value = 0.8;
-      out.connect(ctx.destination);
+      out.gain.value = 0.5;
+      out.connect(comp).connect(ctx.destination);
     }
     if (ctx.state === "suspended") void ctx.resume();
     return ctx;

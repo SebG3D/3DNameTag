@@ -12,10 +12,16 @@ const sfx = (() => {
   function audio() {
     if (!ctx) {
       ctx = new AudioContext();
-      const comp = ctx.createDynamicsCompressor();      // several sounds at once must not clip
+      // The display speaker is powered over USB: bass and long loud sounds draw so much
+      // current that the screen dropped out (roar at full volume). So: no deep bass,
+      // a limiter that keeps peaks down, moderate level.
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass"; hp.frequency.value = 220; hp.Q.value = 0.7;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -18; comp.ratio.value = 8; comp.knee.value = 6;
       out = ctx.createGain();
-      out.gain.value = 0.8;
-      out.connect(comp).connect(ctx.destination);
+      out.gain.value = 0.5;
+      out.connect(hp).connect(comp).connect(ctx.destination);
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -80,28 +86,28 @@ const sfx = (() => {
       }
       return 0.5;
     },
-    roar(t) {                                           // low growl, swelling and falling
+    roar(t) {                                           // short growl; mid-range, no deep bass (power!)
       const f = ctx.createBiquadFilter(), g = ctx.createGain();
-      f.type = "lowpass"; f.Q.value = 6;
-      f.frequency.setValueAtTime(250, t); f.frequency.linearRampToValueAtTime(900, t + 0.35);
-      f.frequency.exponentialRampToValueAtTime(200, t + 1.1);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.6, t + 0.2);
-      g.gain.setValueAtTime(0.6, t + 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+      f.type = "lowpass"; f.Q.value = 5;
+      f.frequency.setValueAtTime(500, t); f.frequency.linearRampToValueAtTime(1400, t + 0.25);
+      f.frequency.exponentialRampToValueAtTime(400, t + 0.7);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.3, t + 0.12);
+      g.gain.setValueAtTime(0.3, t + 0.35); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
       f.connect(g).connect(out);
-      for (const [fr, type] of [[82, "sawtooth"], [87, "sawtooth"], [123, "square"]]) {
+      for (const [fr, type] of [[165, "sawtooth"], [174, "sawtooth"], [247, "square"]]) {
         const o = ctx.createOscillator(), lfo = ctx.createOscillator(), lg = ctx.createGain();
-        o.type = type; o.frequency.setValueAtTime(fr, t); o.frequency.linearRampToValueAtTime(fr * 0.7, t + 1.1);
-        lfo.frequency.value = 23; lg.gain.value = fr * 0.15;         // rough, rattling throat
+        o.type = type; o.frequency.setValueAtTime(fr, t); o.frequency.linearRampToValueAtTime(fr * 0.75, t + 0.7);
+        lfo.frequency.value = 27; lg.gain.value = fr * 0.15;         // rough, rattling throat
         lfo.connect(lg).connect(o.frequency);
-        o.connect(f); o.start(t); o.stop(t + 1.2); lfo.start(t); lfo.stop(t + 1.2);
+        o.connect(f); o.start(t); o.stop(t + 0.8); lfo.start(t); lfo.stop(t + 0.8);
       }
-      noise(t, 1.0, { type: "lowpass", freq: 700, vol: 0.25, attack: 0.15 });
-      return 1.2;
+      noise(t, 0.65, { freq: 900, q: 1, vol: 0.12, attack: 0.1 });
+      return 0.8;
     },
     hiss(t) {                                           // sssss with a little tongue flutter
-      noise(t, 1.0, { type: "highpass", freq: 4500, vol: 0.35, attack: 0.08 });
-      noise(t + 0.1, 0.8, { freq: 6500, q: 3, vol: 0.15, attack: 0.1 });
-      return 1.0;
+      noise(t, 0.8, { type: "highpass", freq: 4500, vol: 0.25, attack: 0.08 });
+      noise(t + 0.1, 0.6, { freq: 6500, q: 3, vol: 0.1, attack: 0.1 });
+      return 0.8;
     },
     pop(t) {
       tone(t, 300, 0.12, { to: 900, vol: 0.4 });
