@@ -101,6 +101,9 @@ class DB:
             self.con.execute("ALTER TABLE orders ADD COLUMN eta_raw REAL")
         if "customer" not in cols:
             self.con.execute("ALTER TABLE orders ADD COLUMN customer TEXT NOT NULL DEFAULT ''")
+        pcols = {r[1] for r in self.con.execute("PRAGMA table_info(plates)")}
+        if "material" not in pcols:                    # filament the G-code was sliced for
+            self.con.execute("ALTER TABLE plates ADD COLUMN material TEXT")
         tcols = {r[1] for r in self.con.execute("PRAGMA table_info(tags)")}
         if "outline" not in tcols:                     # 2D shape (SVG path, mm) for the plate preview
             self.con.execute("ALTER TABLE tags ADD COLUMN outline TEXT NOT NULL DEFAULT ''")
@@ -238,11 +241,12 @@ class DB:
         with self.tx() as c:
             c.execute("UPDATE tags SET plate_id=? WHERE id=? AND status='queued'", (pid, tid))
 
-    def plate_built(self, pid: int, placed: list[dict], unplaced: list[int], gcode: Path, est_s: int) -> None:
+    def plate_built(self, pid: int, placed: list[dict], unplaced: list[int], gcode: Path, est_s: int,
+                    material: str = "") -> None:
         with self.tx() as c:
             c.executemany("UPDATE tags SET status='queued', plate_id=NULL WHERE id=?", [(t,) for t in unplaced])
-            c.execute("UPDATE plates SET map=?, gcode=?, est_s=? WHERE id=?",
-                      (json.dumps(placed), str(gcode), est_s, pid))
+            c.execute("UPDATE plates SET map=?, gcode=?, est_s=?, material=? WHERE id=?",
+                      (json.dumps(placed), str(gcode), est_s, material or None, pid))
 
     def plate_status(self, pid: int, status: str, **fields) -> None:
         """Moves the plate's (live) tags along: building -> plated, done -> printed,

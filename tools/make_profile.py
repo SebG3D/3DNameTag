@@ -41,6 +41,9 @@ OVERRIDES = {
     # Higher Z-hop: tiny PETG text curls up, and at 350 mm/s a 0.15 mm hop
     # caught it and shifted the layer (test 2026-11-12, 2nd text layer).
     "retract_lift": "0.4",
+    # ... and the filament preset must not override it: Prusament PETG sets
+    # filament_retract_lift = 0.15, which wins over retract_lift.
+    "filament_retract_lift": "nil",
 }
 # Keep the bed hot after a plate: the next plate starts without the long
 # bed heat-up (firmware safety timer still switches heaters off when idle).

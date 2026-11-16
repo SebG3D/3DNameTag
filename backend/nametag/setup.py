@@ -28,6 +28,7 @@ class PrintSetup:
     wiper_z: float = -0.6         # wiper mode: Z of the wipe pass (pad top ~0.2 above the touchpoint, measured with G12)
     text_temp: float = 0.0        # wiper mode: nozzle temperature for the text colour
     nozzle: float = 0.0           # nozzle diameter of the profile (the printer must report the same)
+    material: str = ""            # filament_type of the profile, lower case ("petg", "pla")
 
     @property
     def text_layers(self) -> int:
@@ -38,17 +39,41 @@ class PrintSetup:
                 "text_overlap": self.text_overlap, "hole_d": self.hole_d, "text_grow": self.text_grow}
 
 
-def _ini_value(profile: Path, key: str) -> float:
+def _ini_str(profile: Path, key: str) -> str:
     m = re.search(rf"^{key} = (.*)$", profile.read_text(), re.M)
     if not m:
         raise ValueError(f"{key} missing in {profile}")
-    return float(m[1].split(",")[0])          # per-extruder lists ("0.25,0.25"): first tool
+    return m[1].split(",")[0].strip()         # per-extruder lists ("0.25,0.25"): first tool
 
 
-def load_setup(name: str | None = None, config: Path = CONFIG) -> PrintSetup:
+def _ini_value(profile: Path, key: str) -> float:
+    return float(_ini_str(profile, key))
+
+
+def setup_materials(e: dict) -> list[str]:
+    """Materials a print.json setup entry can print: its own profile's
+    filament + the variants under "materials" (e.g. {"pla": {"profile": ...}})."""
+    own = _ini_str(PROFILE_DIR / e["profile"], "filament_type").lower()
+    return [own] + [m for m in e.get("materials", {}) if m != own]
+
+
+def load_setup(name: str | None = None, config: Path = CONFIG, material: str | None = None) -> PrintSetup:
+    """material: filament to print with (None = the setup's own profile). A
+    variant only swaps the profile (+ e.g. text_temp_delta); layer heights and
+    nozzle must stay the same, so already rendered tags stay valid."""
     cfg = json.loads(config.read_text())
     name = name or cfg["active"]
     e = cfg["setups"][name]
+    own = PROFILE_DIR / e["profile"]
+    if material and material != _ini_str(own, "filament_type").lower():
+        variant = e.get("materials", {}).get(material)
+        if variant is None:
+            raise ValueError(f"{name}: kein {material.upper()}-Profil (print.json materials)")
+        e = {**e, **variant}
+        p = PROFILE_DIR / e["profile"]
+        for key in ("layer_height", "first_layer_height", "nozzle_diameter"):
+            if _ini_value(p, key) != _ini_value(own, key):
+                raise ValueError(f"{name}: {material} profile {p.name} has another {key} than {own.name}")
     profile = PROFILE_DIR / e["profile"]
     layer, first = _ini_value(profile, "layer_height"), _ini_value(profile, "first_layer_height")
     n = (e["base_h"] - first) / layer
@@ -67,7 +92,8 @@ def load_setup(name: str | None = None, config: Path = CONFIG) -> PrintSetup:
                       e["text_overlap"], e["hole_d"], e["text_grow"], layer, first, text_layer,
                       cc, float(e.get("wiper_z", -0.6)),
                       _ini_value(profile, "temperature") + float(e.get("text_temp_delta", 0)),
-                      _ini_value(profile, "nozzle_diameter"))
+                      _ini_value(profile, "nozzle_diameter"),
+                      _ini_str(profile, "filament_type").lower())
 
 
 def list_setups(config: Path = CONFIG) -> tuple[str, dict]:

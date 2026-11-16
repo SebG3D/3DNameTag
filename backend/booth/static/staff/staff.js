@@ -159,6 +159,8 @@ function nozzleBanner() {
     <div class="note">Danach am Drucker im Menü den Düsendurchmesser auf ${st.nozzle_want} stellen.</div>`;
 }
 
+const mat = (m) => (m || "").toUpperCase();
+
 function plateRow(p) {
   const [icon, word, cls] = PLATE[p.state];
   const c = color(p.text_color);
@@ -188,6 +190,7 @@ function plateRow(p) {
       <span class="pnum">Platte ${p.id}</span>
       <span class="pcolor">${dot(c.hex)} ${esc(c.name)}</span>
       <span class="pcount">🏷️ ${p.count}/${p.max}</span>
+      <span class="chip${(p.material || data.material) === "pla" ? " busy" : ""}" title="Material">${esc(mat(p.material || data.material))}</span>
       ${p.recommended && !busy() ? `<span class="hint">⭐ als Nächstes</span>` : ""}
       <span class="spacer"></span>
       ${btn}
@@ -208,7 +211,7 @@ function startPlate(p) {
   const c = color(p.text_color), base = data.base_color;
   const again = p.state !== "waiting";
   act(`/api/staff/plates/${p.id}/start`, `<p class="q">${again ? "🔁" : "▶"} Platte ${p.id} ${again ? "nochmal drucken" : "starten"}?</p>
-    <ul class="checks"><li>🧹 Druckplatte leer?</li><li>${dot(base.hex)} <b>${esc(base.name)}</b> eingelegt?</li></ul>
+    <ul class="checks"><li>🧹 Druckplatte leer?</li><li>${dot(base.hex)} <b>${esc(base.name)} ${esc(mat(data.material))}</b> eingelegt?</li></ul>
     <p class="muted">Danach Text in ${dot(c.hex)} ${esc(c.name)}.</p>`, "✓ Ja, los!");
 }
 

@@ -93,7 +93,7 @@ def main() -> int:
     from nametag.shapes import load_shapes
     try:
         fonts, shapes = load_fonts(), load_shapes()
-        setup = load_setup(cfg.print_setup if cfg else None)
+        setup = load_setup(cfg.print_setup if cfg else None, material=cfg.material if cfg else None)
         report(OK, "fonts / shapes / setup", f"{len(fonts)} fonts, {len(shapes)} shapes, setup {setup.name}")
     except Exception as e:                                  # noqa: BLE001
         report(BAD, "fonts / shapes / setup", str(e))

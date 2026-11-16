@@ -353,6 +353,7 @@ def test_settings_setup_and_printer_switch(cfg_env):
     booth, _ = cfg_env
     d = booth.staff_settings()["settings"]
     d["print_setup"] = "nozzle040"
+    d["material"] = "pla"                                           # nozzle040 has only a PLA profile
     d["printer"] = {**d["printer"], "type": "prusalink", "host": "127.0.0.1:9", "api_key": "secret"}
     booth.staff_update_settings(d)
     assert booth.setup.name == "nozzle040" and booth.printer.kind != "sim"
@@ -362,6 +363,36 @@ def test_settings_setup_and_printer_switch(cfg_env):
     booth.staff_update_settings(d)                                  # empty api_key = keep
     assert booth.cfg.printer["api_key"] == "secret"
     assert booth.staff_test_printer(d["printer"])["state"] == "offline"
+
+
+def test_material_switch_next_plates(tmp_path):
+    import shutil
+    from booth.config import CONFIG
+    path = tmp_path / "booth.json"                                  # settings are saved: never the repo file
+    shutil.copy(CONFIG, path)
+    clock = Clock()
+    printer = SimPrinter(speed=1.0, clock=clock)
+    booth = Booth(load_config(path, data_dir=tmp_path), printer=printer, setup_name="nozzle040petg_w", clock=clock)
+    assert booth.setup.material == "petg"
+    order(booth, ("EMMA", "baloo", "star", "red"))
+    pid = booth.db.q1("SELECT id FROM plates WHERE status='waiting'")["id"]
+    start(booth, pid)
+    assert booth.db.plate(pid)["material"] == "petg"
+    d = booth.staff_settings()["settings"]
+    d["material"] = "pla"                                           # allowed while a plate prints
+    booth.staff_update_settings(d)
+    assert booth.setup.material == "pla" and booth.setup.profile.name == "coreone_040.ini"
+    assert booth.setup.text_temp == 225 and booth.staff_overview()["material"] == "pla"
+    assert booth.cfg.material == "pla" and booth.db.plate(pid)["material"] == "petg"    # running plate unchanged
+    run_until(booth, clock, lambda: booth.db.active_plate() and booth.db.active_plate()["status"] == "color_change")
+    printer.resume()
+    run_until(booth, clock, lambda: booth.db.plate(pid)["status"] == "done")
+    start(booth, pid)                                               # restart: re-sliced for PLA
+    p = booth.db.plate(pid)
+    assert p["material"] == "pla" and "filament_type = PLA" in Path(p["gcode"]).read_text()
+    d["material"] = "abs"
+    with pytest.raises(BoothError):
+        booth.staff_update_settings(d)
 
 
 def test_stats_close_day_backup_csv(env, tmp_path):

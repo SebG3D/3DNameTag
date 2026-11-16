@@ -8,7 +8,7 @@ day + text colour via M600). Plan: `docs/PLAN.md`.
 - `fonts/` – six OFL/Apache fonts: `src/` upstream, `ttf/` + `woff2/` built by `tools/build_fonts.py`, list in `fonts.json`
 - `scad/lib/tag.scad` – tag core (base, text, hole); `scad/shapes/<id>/` – shape plugins (`shape.json` + `shape.scad`, see `backend/nametag/shapes.py`)
 - `slicer/profiles/` – flat PrusaSlicer profiles (`tools/make_profile.py`): Core One 0.4 (0.20 mm BALANCED) and 0.25 (0.15 mm SPEED), Prusament PLA; 0.25 also with Prusament PETG. Plain G-code, set up as two tools on one nozzle (text = tool 2, tool change = M600) so PrusaSlicer can build a wipe tower; bed stays hot after a plate
-- `config/print.json` – print setups (profile, scale, base/text height, hole, min text size, `color_change`: `tower` | `wiper` + `wiper_z`); `active` is used by default, tools take `--setup`
+- `config/print.json` – print setups (profile, scale, base/text height, hole, min text size, `color_change`: `tower` | `wiper` + `wiper_z`); `active` is used by default, tools take `--setup`; `materials` adds other filaments per setup (e.g. `pla` → `coreone_025.ini`, Prusament PLA), picked with the staff toggle PLA/PETG (booth.json `material`, used for every plate started after saving; a restarted plate is re-sliced if its G-code was for the other material)
 - `backend/nametag/` – pipeline: names → layout/render (OpenSCAD) → plate packing (3MF with text layer range on tool 2, wipe tower position) → slicing (M600 at the tower or the nozzle wiper, T lines stripped, footer merged to one tool)
 - `backend/booth/` – booth backend: `service.py` (previews, orders, payment, plate scheduler, time model), `db.py` (SQLite), `printer.py` (simulator + PrusaLink), `server.py` (FastAPI), `static/staff/` (staff page for the phone)
 - `frontend/` – kiosk app (Vite + React + TS), built to `frontend/dist/`, served by the backend at `/kiosk/`
@@ -35,7 +35,7 @@ cd backend && .venv/bin/python -m booth.server --port 8080      # simulated prin
 Staff page: `http://<pi>:8080/staff/` (PIN from `config/booth.json` or env `BOOTH_PIN`).
 "⚙ Einstellungen" on the staff page edits `config/booth.json` and applies it live (no restart): event name,
 base/text colours, prices, order/queue limits, plate size/wait, fonts/shapes on/off, kiosk idle time + sound,
-printer (sim/PrusaLink, connection test), print setup (only with an empty queue), staff PIN. The kiosk
+printer (sim/PrusaLink, connection test), print setup (only with an empty queue), material PLA/PETG (any time, next plate start), staff PIN. The kiosk
 picks changes up the next time it is on its start screen. `--config <file>` / `BOOTH_CONFIG` selects another booth.json.
 Kiosk API: `GET /api/config`, `GET /api/status`, `POST /api/fit`, `POST /api/preview`, `POST /api/orders`.
 For the real printer set `"printer": {"type": "prusalink", "host": ..., "api_key": ...}` – a USB stick must be

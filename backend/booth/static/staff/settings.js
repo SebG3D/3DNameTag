@@ -35,6 +35,8 @@ function renderSettings() {
   const setupLocked = S.setup_locked || S.open_tags > 0 || S.plate_active;
   const setups = S.setups.map((s) => `<option value="${esc(s.name)}" ${s.name === S.current_setup ? "selected" : ""}>
       ${esc(s.name)} – Skalierung ${s.scale}, min. Text ${s.min_text_size} mm${s.default ? " (Standard)" : ""}</option>`).join("");
+  const mats = ["pla", "petg"].map((m) => `<button type="button" class="big ${d.material === m ? "primary" : ""}"
+      data-mat="${m}">${d.material === m ? "✓ " : ""}${m.toUpperCase()}</button>`).join("");
   const toggles = (list, disabled, key) => list.map((x) => `<label class="check">
       <input type="checkbox" data-${key}="${esc(x.id)}" ${disabled.includes(x.id) ? "" : "checked"}> ${esc(x.label)}</label>`).join("");
 
@@ -114,6 +116,12 @@ function renderSettings() {
     <div class="row"><button class="small" id="testPrinter">Verbindung testen</button><span id="testMsg" class="muted"></span></div>
   </section>
 
+  <section class="card"><h2>Material</h2>
+    <div class="field"><span>Filament für den Druck</span><div class="row">${mats}</div>
+      <small>Gilt für jede Platte, die ab dem Speichern gestartet wird (Prusament-${(d.material || "").toUpperCase()}-Profil).
+        Laufende Platte druckt weiter wie gestartet. Am Drucker dasselbe Material laden!</small></div>
+  </section>
+
   <section class="card"><h2>Druck-Setup (Düse)</h2>
     ${setupLocked ? `<div class="lock">${S.setup_locked ? "Per --setup beim Start festgelegt." :
       "Nur änderbar, wenn keine Anhänger offen sind und keine Platte läuft."}</div>` : ""}
@@ -139,6 +147,8 @@ function renderSettings() {
   document.querySelectorAll("[data-delitem]").forEach((b) => b.onclick = () => {
     collect(); S.settings.shop_items.splice(+b.dataset.delitem, 1); renderSettings(); });
   $("testPrinter").onclick = testPrinter;
+  document.querySelectorAll("[data-mat]").forEach((b) => b.onclick = () => {
+    collect(); S.settings.material = b.dataset.mat; renderSettings(); });
 }
 
 function setPath(obj, path, v) {

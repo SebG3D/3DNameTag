@@ -14,7 +14,7 @@ from nametag import REPO
 CONFIG = REPO / "config" / "booth.json"
 COMMENT = ("Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). "
            "Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). "
-           "shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till). Printer: type sim | prusalink. print_setup: null = 'active' from print.json.")
+           "shop_items: other things sold at the Kasse (price_cents 0 = price asked at the till). Printer: type sim | prusalink. print_setup: null = 'active' from print.json. material: petg | pla, used for every plate started from then on.")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _ID = re.compile(r"^[a-z0-9_-]{1,20}$")
 SHOP_MAX_CENTS = 100000
@@ -49,6 +49,7 @@ class BoothConfig:
     kiosk_idle_s: int = 90
     kiosk_sound: bool = True
     print_setup: str | None = None
+    material: str = "petg"           # filament for plates started from now on (print.json setup variant)
     shop_items: list[dict] = field(default_factory=lambda: [dict(i) for i in DEFAULT_SHOP_ITEMS])
     data_dir: Path = field(default_factory=lambda: REPO / "backend" / "data")
     path: Path | None = None         # file it was loaded from (save target)
@@ -100,6 +101,15 @@ def _color(c, what: str) -> dict:
     if not isinstance(name, str) or not name.strip() or len(name) > 20:
         raise ConfigError(f"{what} {c['hex'].upper()}: Name fehlt (max. 20 Zeichen)")
     return {"name": name.strip(), "hex": c["hex"].upper()}
+
+
+MATERIALS = ("petg", "pla")
+
+
+def _material(v) -> str:
+    if v not in MATERIALS:
+        raise ConfigError("material: petg oder pla")
+    return v
 
 
 def _shop_items(items) -> list[dict]:
@@ -163,6 +173,7 @@ def parse_config(c: dict) -> BoothConfig:
             kiosk_idle_s=_int({"idle_s": k.get("idle_s", 90)}, "idle_s", 20, 600),
             kiosk_sound=bool(k.get("sound", True)),
             print_setup=c.get("print_setup") or None,
+            material=_material(c.get("material", "petg")),
             shop_items=_shop_items(c.get("shop_items", DEFAULT_SHOP_ITEMS)),
         )
     except KeyError as e:
@@ -186,6 +197,7 @@ def config_dict(cfg: BoothConfig) -> dict:
         "disabled_fonts": cfg.disabled_fonts,
         "disabled_shapes": cfg.disabled_shapes,
         "print_setup": cfg.print_setup,
+        "material": cfg.material,
         "shop_items": cfg.shop_items,
         "staff_pin": cfg.file_pin or cfg.staff_pin,
         "printer": cfg.printer,

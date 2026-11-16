@@ -28,7 +28,7 @@ from nametag.fonts import load_fonts
 from nametag.names import NAME_MAX, clean_name
 from nametag.plate import TOWER_KEEP_OUT, build_plate, pack
 from nametag.render import layout, render_svg, render_tag
-from nametag.setup import list_setups, load_setup
+from nametag.setup import list_setups, load_setup, setup_materials
 from nametag.shapes import load_shapes
 from nametag.slicer import slice_plate
 
@@ -103,7 +103,11 @@ class Booth:
                  clock=time.time):
         self.cfg, self.clock = cfg, clock
         self.setup_locked = setup_name is not None          # --setup on the command line wins
-        self.setup = load_setup(setup_name or cfg.print_setup)
+        try:
+            self.setup = load_setup(setup_name or cfg.print_setup, material=cfg.material)
+        except ValueError as e:                             # setup has no variant for that material
+            self.setup = load_setup(setup_name or cfg.print_setup)
+            log.warning("%s - printing %s instead", e, self.setup.material)
         self.config_rev = 1                                 # kiosk reloads when this changes
         self.kiosk_reset = 0                                # staff 'reset kiosk': kiosk reloads when this changes
         self.fonts, self.shapes = load_fonts(), load_shapes()
@@ -562,16 +566,16 @@ class Booth:
         d = self.data / "plates"
         try:
             gcode = Path(plate["gcode"]) if plate["gcode"] else None
-            if gcode and gcode.exists() and plate["est_s"] and \
+            if gcode and gcode.exists() and plate["est_s"] and plate["material"] == self.setup.material and \
                     {m["tag_id"] for m in plate["map"]} == {t["id"] for t in tags}:
-                est = plate["est_s"]                              # restart: same tags, same G-code
+                est = plate["est_s"]                              # restart: same tags + material, same G-code
             else:
                 stls = {str(t["id"]): Path(t["stl"]) for t in tags}
                 placed, rest = build_plate(stls, d / f"plate_{pid:03d}.3mf", self.setup)
                 res = slice_plate([d / f"plate_{pid:03d}.3mf"], d / f"plate_{pid:03d}.gcode", self.setup)
                 pmap = [{"tag_id": int(p.key), "x": round(p.x, 1), "y": round(p.y, 1),
                          "w": round(float(p.w), 1), "h": round(float(p.h), 1)} for p in placed]
-                self.db.plate_built(pid, pmap, [int(k) for k in rest], res.gcode, res.estimated_s)
+                self.db.plate_built(pid, pmap, [int(k) for k in rest], res.gcode, res.estimated_s, self.setup.material)
                 self._learn_time(res.estimated_s, [t for t in tags if str(t["id"]) not in rest])
                 gcode, est = res.gcode, res.estimated_s
             self._progress.pop(pid, None)
@@ -580,7 +584,8 @@ class Booth:
             self.printer.start(gcode, est)
             self._just_started.add(pid)
             self.db.plate_status(pid, "printing", started=self.clock(), finished=None, error=None)
-            log.info("plate %d started: %s, %d tags, est %d min", pid, plate["text_color"], len(tags), est // 60)
+            log.info("plate %d started: %s, %s, %d tags, est %d min", pid, self.setup.material, plate["text_color"],
+                     len(tags), est // 60)
         except Exception as e:                      # noqa: BLE001 - shown on the staff page
             log.exception("plate %d failed", pid)
             self.db.plate_status(pid, "failed", error=str(e)[:300])
@@ -633,7 +638,7 @@ class Booth:
         state = {"waiting": "waiting", "failed": "error", "done": "done"}.get(p["status"], "printing")
         return {"id": pid, "state": state, "status": p["status"], "text_color": p["text_color"],
                 "count": len(live), "max": self.cfg.plate_max_tags,
-                "est_s": p["est_s"], "error": p["error"],
+                "est_s": p["est_s"], "error": p["error"], "material": p["material"],
                 "started": p["started"], "finished": p["finished"], "recommended": pid == recommended,
                 "map": pmap,
                 "tags": [{"id": t["id"], "name": t["name"], "order_number": t["order_number"],
@@ -661,7 +666,7 @@ class Booth:
                             "nozzle_wrong": self.nozzle_wrong()},
                 "orders": orders, "plates": plates,
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
-                "setup": self.setup.name, "eta_all_s": int(self.eta_s()), "today": self._day(),
+                "setup": self.setup.name, "material": self.setup.material, "eta_all_s": int(self.eta_s()), "today": self._day(),
                 "ordering": self.ordering_state(), "closed_messages": CLOSED_MESSAGES,
                 "shop_items": self.cfg.shop_items,
                 "server_time": time.time()}
@@ -820,8 +825,9 @@ class Booth:
                 "fonts": [{"id": f.id, "label": f.label} for f in self.fonts.values()],
                 "shapes": [{"id": s.id, "label": s.label["de"]} for s in self.shapes.values()],
                 "setups": [{"name": n, "scale": e["scale"], "min_text_size": e["min_text_size"],
-                            "profile": e["profile"], "default": n == active} for n, e in setups.items()],
-                "current_setup": self.setup.name, "setup_locked": self.setup_locked,
+                            "profile": e["profile"], "default": n == active, "materials": setup_materials(e)}
+                           for n, e in setups.items()],
+                "current_setup": self.setup.name, "current_material": self.setup.material, "setup_locked": self.setup_locked,
                 "pin_from_env": self.cfg.file_pin is not None,
                 "open_tags": self.open_tag_count(), "plate_active": self.db.active_plate() is not None,
                 "colors_in_use": sorted(self.colors_in_use())}
@@ -877,13 +883,14 @@ class Booth:
             plate_active = self.db.active_plate() is not None
             setup = self.setup
             want = new.print_setup or list_setups()[0]
-            if want != self.setup.name:
-                if self.setup_locked:
-                    raise BoothError("bad_config", "Druck-Setup ist per --setup festgelegt")
-                if self.open_tag_count() or plate_active:
-                    raise BoothError("bad_config", "Druck-Setup nur ändern, wenn keine Anhänger offen sind")
+            if self.setup_locked:
+                want = self.setup.name
+            if want != self.setup.name and (self.open_tag_count() or plate_active):
+                raise BoothError("bad_config", "Druck-Setup nur ändern, wenn keine Anhänger offen sind")
+            if want != self.setup.name or new.material != self.setup.material:
+                # material alone may change any time: same geometry, used from the next plate start on
                 try:
-                    setup = load_setup(want)
+                    setup = load_setup(want, material=new.material)
                 except (KeyError, ValueError) as e:
                     raise BoothError("bad_config", f"Druck-Setup {want}: {e}") from None
             printer = self.printer
@@ -894,8 +901,11 @@ class Booth:
             new.data_dir, new.path = old.data_dir, old.path
             save_config(new)
             if setup is not self.setup:
+                if setup.material != self.setup.material:
+                    log.info("material %s -> %s (plates started from now on)", self.setup.material, setup.material)
+                renamed = setup.name != self.setup.name
                 self.setup = setup
-                for pid in list(self.previews):
+                for pid in list(self.previews) if renamed else ():
                     shutil.rmtree(self.previews.pop(pid).stl.parent, ignore_errors=True)
             if printer is not self.printer:
                 self.nozzle, self._nozzle_at = None, float("-inf")
