@@ -85,7 +85,7 @@ export function StaffCorner() {
     <div className="staff-corner" onPointerDown={() => {
       const now = Date.now();
       taps.current = [...taps.current.filter((t) => now - t < 3000), now];
-      if (taps.current.length >= 5) window.location.href = "/staff/?osk=1";   // touch kiosk: on-screen keyboard
+      if (taps.current.length >= 5) window.location.href = "/staff/?osk=1&from=kiosk";   // touch kiosk: on-screen keyboard
     }} />
   );
 }

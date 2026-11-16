@@ -3,6 +3,10 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+
+// "Kiosk" back link only when we came from the customer kiosk (5 taps, one-screen
+// setup). On the dedicated staff screen there is no keyboard/mouse to get back.
+if (new URLSearchParams(location.search).get("from") === "kiosk") $("kioskLink").classList.remove("hidden");
 let token = sessionStorage.getItem("staffToken") || "";
 if (location.hash.startsWith("#token=")) {          // hand-over from another device / tests
   token = decodeURIComponent(location.hash.slice(7)); sessionStorage.setItem("staffToken", token);

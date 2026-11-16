@@ -78,7 +78,7 @@ npm run dev                    # dev server on :5173, proxies /api and /fonts to
 Flow: start → name (own keyboard) → font → shape (shapes that don't fit the name are greyed out) →
 text colour (real preview from the backend, rendered as SVG) → review ("+ Noch einen Anhänger", price) →
 order number + ETA. Idle 90 s → "Bist du noch da?" → reset. Backend unreachable → pause screen with auto-retry.
-5 taps in the top-left corner within 3 s open the staff page.
+5 taps in the top-left corner within 3 s open the staff page (only then it shows a "Kiosk" link back; the dedicated staff screen has none).
 Shape icons come from `GET /api/shapes/<id>/icon` (rendered once, cached in `backend/data/icons/` – delete after changing a shape).
 
 ## New shape
