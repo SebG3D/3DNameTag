@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Töne testen</title>
+<!-- Sound test bench: every staff sound from sfx.js as a button. Works as a local
+     file (file://…/sounds.html) or on the booth at /staff/sounds.html. Reload the
+     page after editing sfx.js. -->
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; background: #f4f4f8; color: #222; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 16px; margin: 20px 0 8px; color: #555; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font-size: 18px; padding: 12px 18px; border-radius: 10px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+  button:active { background: #dde; }
+  label { display: block; margin-top: 16px; }
+</style>
+</head>
+<body>
+<h1>🔊 Töne testen</h1>
+<p>Nach einer Änderung an <code>sfx.js</code>: Seite neu laden (F5).</p>
+<h2>Kasse-Artikel</h2><div class="row" id="items"></div>
+<h2>Bezahlen</h2><div class="row" id="pay"></div>
+<h2>Drucker-Meldungen</h2><div class="row" id="alerts"></div>
+<label><input type="checkbox" id="loop"> immer wieder abspielen (alle 3 s)</label>
+<script src="sfx.js"></script>
+<script>
+  const groups = {
+    items: sfx.NAMES.filter((n) => n !== "none").map((n) => [n, sfx.LABELS[n]]),
+    pay: [["robot", "🤖 Anhänger"], ["kaching", "💶 Ka-ching"], ["fanfare", "🎺 Fanfare"]],
+    alerts: [["plateDone", "✅ Platte fertig"], ["colorChange", "🎨 Farbwechsel"], ["error", "❌ Fehler"], ["newOrder", "🛒 Neue Bestellung"]],
+  };
+  let last = null, timer = null;
+  for (const [id, list] of Object.entries(groups)) {
+    document.getElementById(id).innerHTML = list.map(([n, l]) => `<button data-s="${n}">${l}</button>`).join("");
+  }
+  document.body.addEventListener("click", (e) => {
+    const n = e.target.closest("[data-s]")?.dataset.s;
+    if (!n) return;
+    last = n; sfx.force(n);
+  });
+  document.getElementById("loop").onchange = (e) => {
+    clearInterval(timer);
+    if (e.target.checked) timer = setInterval(() => last && sfx.force(last), 3000);
+  };
+</script>
+</body>
+</html>
