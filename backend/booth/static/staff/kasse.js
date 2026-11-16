@@ -149,9 +149,11 @@ async function pay() {
   const o = cartOrder(), total = cartTotal();
   const given = total === 0 ? 0 : cart.given;
   const back = given - total;
-  if (!(await ask(`<p class="q">💶 ${euro(total)} bekommen?</p>
-    ${back > 0 ? `<p>Rückgeld: <b>${euro(back)}</b></p>` : ""}${o ? `<p>Bestellung ${orderLabel(o)} ist dann bezahlt.</p>` : ""}`,
-    "✓ Ja, Geld da"))) return;
+  const q = total === 0 ? `🎁 Kostenlos – fertig?`
+    : back > 0 ? `💶 ${euro(given)} bekommen?` : `💶 ${euro(total)} passend bekommen?`;
+  if (!(await ask(`<p class="q">${q}</p>
+    ${back > 0 ? `<p>Preis ${euro(total)} → danach <b>${euro(back)}</b> Rückgeld geben.</p>` : ""}${o ? `<p>Bestellung ${orderLabel(o)} ist dann bezahlt.</p>` : ""}`,
+    total === 0 ? "✓ Ja, fertig" : "✓ Ja, Geld da"))) return;
   try {
     const r = await api("/api/staff/sales", { method: "POST", body: JSON.stringify({
       order_id: o ? o.id : null, given_cents: given,
