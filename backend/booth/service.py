@@ -142,7 +142,7 @@ class Booth:
         return {
             "event_name": c.event_name,
             "base_color": c.base_color,
-            "text_colors": c.text_colors,
+            "text_colors": c.enabled_colors(),
             "fonts": [{"id": f.id, "label": f.label, "url": f"/fonts/{f.id}.woff2"} for f in self.fonts.values()
                       if f.id not in c.disabled_fonts],
             "shapes": [{"id": s.id, "label": s.label} for s in self.shapes.values()
@@ -249,6 +249,7 @@ class Booth:
         if not gate["open"]:
             raise BoothError("closed", gate["message"])
         colors = {c["id"] for c in self.cfg.text_colors}
+        enabled = {c["id"] for c in self.cfg.enabled_colors()}
         previews = []
         for it in items:
             p = self.previews.get(it.get("preview_id", ""))
@@ -256,6 +257,8 @@ class Booth:
                 raise BoothError("preview_expired")
             if it.get("text_color") not in colors:
                 raise BoothError("bad_color")
+            if it["text_color"] not in enabled:
+                raise BoothError("color_off")
             previews.append((p, it["text_color"]))
         tags = []
         for p, color in previews:
@@ -740,8 +743,6 @@ class Booth:
         for k in self.SECRETS:
             p[f"has_{k}"] = bool(p.pop(k, ""))                # empty = unchanged
         active, setups = list_setups()
-        in_use = {t["text_color"] for t in self.db.q(
-            "SELECT DISTINCT text_color FROM tags WHERE status IN ('held','queued','plated')")}
         return {"settings": d,
                 "fonts": [{"id": f.id, "label": f.label} for f in self.fonts.values()],
                 "shapes": [{"id": s.id, "label": s.label["de"]} for s in self.shapes.values()],
@@ -750,7 +751,14 @@ class Booth:
                 "current_setup": self.setup.name, "setup_locked": self.setup_locked,
                 "pin_from_env": self.cfg.file_pin is not None,
                 "open_tags": self.open_tag_count(), "plate_active": self.db.active_plate() is not None,
-                "colors_in_use": sorted(in_use)}
+                "colors_in_use": sorted(self.colors_in_use())}
+
+    def colors_in_use(self) -> set[str]:
+        """Text colours of tags still to print or hand out: they cannot be
+        removed, renamed or recoloured (switching them off is fine)."""
+        return {t["text_color"] for t in self.db.q(
+            "SELECT DISTINCT t.text_color FROM tags t JOIN orders o ON o.id=t.order_id "
+            "WHERE t.status IN ('held','queued','plated') OR (t.status='printed' AND o.status='open')")}
 
     def _merge_settings(self, d: dict) -> dict:
         """Staff page dict -> full booth.json dict (secrets and PIN: empty = keep)."""
@@ -782,12 +790,17 @@ class Booth:
         if not set(self.fonts) - set(new.disabled_fonts) or not set(self.shapes) - set(new.disabled_shapes):
             raise BoothError("bad_config", "mindestens eine Schrift und eine Form muss an sein")
         with self.lock:
+            used = self.colors_in_use()
             removed = {c["id"] for c in old.text_colors} - {c["id"] for c in new.text_colors}
-            in_use = removed & {t["text_color"] for t in self.db.q(
-                "SELECT DISTINCT text_color FROM tags WHERE status IN ('held','queued','plated')")}
-            if in_use:
+            if in_use := removed & used:
                 names = ", ".join(old.color(i)["name"] for i in sorted(in_use))
                 raise BoothError("bad_config", f"Farbe {names} hat noch offene Anhänger – erst drucken oder stornieren")
+            changed = [c for c in new.text_colors if c["id"] in used and c["id"] in {o["id"] for o in old.text_colors}
+                       and (c["name"], c["hex"]) != (old.color(c["id"])["name"], old.color(c["id"])["hex"])]
+            if changed:
+                names = ", ".join(old.color(c["id"])["name"] for c in changed)
+                raise BoothError("bad_config", f"Farbe {names} hat offene Anhänger – Name und Farbton bleiben, "
+                                               "bis alle abgeholt sind (ausschalten geht)")
             plate_active = self.db.active_plate() is not None
             setup = self.setup
             want = new.print_setup or list_setups()[0]

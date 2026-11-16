@@ -81,7 +81,7 @@ def main() -> int:
     printer = SimPrinter(speed=1.0, clock=clock, prep_s=cfg.plate_prep_min * 60)   # as measured on the Core One
     booth = Booth(cfg, printer=printer, setup_name=a.setup, clock=clock)
     fonts, shapes = list(booth.fonts), list(booth.shapes)
-    colors = [c["id"] for c in cfg.text_colors]
+    colors = [c["id"] for c in cfg.enabled_colors()]
     end = day0 + a.hours * 3600
 
     # arrivals: busier in the second half (weights 1 .. 2)

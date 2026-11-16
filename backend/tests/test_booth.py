@@ -319,6 +319,36 @@ def test_settings_guards(cfg_env):
     assert booth.cfg.staff_pin == "1357"
 
 
+def test_color_off_and_locked_while_in_use(cfg_env):
+    booth, _ = cfg_env
+    p = booth.preview("EMMA", "baloo", "star")
+    booth.place_order([{"preview_id": p.id, "text_color": "red"}])
+    d = booth.staff_settings()["settings"]
+    assert booth.staff_settings()["colors_in_use"] == ["red"]
+    for c in d["text_colors"]:
+        c["off"] = c["id"] in ("red", "gold")
+    booth.staff_update_settings(d)                    # switching an in-use colour off is fine
+    assert [c["id"] for c in booth.public_config()["text_colors"]] == ["white", "yellow", "green"]
+    p2 = booth.preview("ALMA", "baloo", "star")
+    with pytest.raises(BoothError, match="color_off"):
+        booth.place_order([{"preview_id": p2.id, "text_color": "red"}])
+    booth.place_order([{"preview_id": p2.id, "text_color": "white"}])
+    assert {pl["text_color"] for pl in booth.staff_overview()["plates"]} == {"red", "white"}   # red still prints
+    for change in ({"name": "Kirsche"}, {"hex": "#FF0000"}):
+        d = booth.staff_settings()["settings"]
+        d["text_colors"] = [{**c, **change} if c["id"] == "red" else c for c in d["text_colors"]]
+        with pytest.raises(BoothError, match="Rot"):
+            booth.staff_update_settings(d)
+    d = booth.staff_settings()["settings"]
+    d["text_colors"] = [{**c, "name": "Altgold"} if c["id"] == "gold" else c for c in d["text_colors"]]
+    booth.staff_update_settings(d)                    # unused colours stay editable
+    d = booth.staff_settings()["settings"]
+    for c in d["text_colors"]:
+        c["off"] = True
+    with pytest.raises(BoothError, match="an sein"):
+        booth.staff_update_settings(d)
+
+
 def test_settings_setup_and_printer_switch(cfg_env):
     booth, _ = cfg_env
     d = booth.staff_settings()["settings"]

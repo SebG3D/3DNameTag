@@ -13,7 +13,7 @@ from nametag import REPO
 
 CONFIG = REPO / "config" / "booth.json"
 COMMENT = ("Booth settings, edited by staff in the morning (staff page: Einstellungen, applied live). "
-           "Prices in euro cents. Printer: type sim | prusalink. print_setup: null = 'active' from print.json.")
+           "Prices in euro cents. text_colors[].off: no new orders in that colour (open tags still print). Printer: type sim | prusalink. print_setup: null = 'active' from print.json.")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _ID = re.compile(r"^[a-z0-9_-]{1,20}$")
 
@@ -48,6 +48,10 @@ class BoothConfig:
             if c["id"] == color_id:
                 return c
         raise KeyError(color_id)
+
+    def enabled_colors(self) -> list[dict]:
+        """Text colours the kiosk offers ('off' ones still print their open tags)."""
+        return [c for c in self.text_colors if not c["off"]]
 
     def price_cents(self, n_tags: int) -> int:
         return max(0, n_tags - self.free_tags) * self.price_per_extra_cents
@@ -95,9 +99,9 @@ def parse_config(c: dict) -> BoothConfig:
             col = _color(t, "Textfarbe")
             if not _ID.match(str(t.get("id", ""))):
                 raise ConfigError(f"Textfarbe {col['name']}: ungültige id")
-            colors.append({"id": t["id"], **col})
-        if not colors:
-            raise ConfigError("mindestens eine Textfarbe nötig")
+            colors.append({"id": t["id"], **col, "off": bool(t.get("off", False))})
+        if not any(not t["off"] for t in colors):
+            raise ConfigError("mindestens eine Textfarbe muss an sein")
         if len({t["id"] for t in colors}) != len(colors):
             raise ConfigError("doppelte Textfarben-id")
         pr, pl, k = c["pricing"], c["plate"], c.get("kiosk", {})

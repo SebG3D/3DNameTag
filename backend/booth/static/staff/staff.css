@@ -127,6 +127,9 @@ svg.bed { width: 100%; height: calc(100vh - 90px); flex: none; }
 .colorrow input[type=text] { flex: 1; min-width: 0; font-size: 18px; padding: 8px; }
 input[type=color] { width: 52px; height: 44px; padding: 2px; border-radius: 10px; }
 .colorrow input[type=color] { width: 52px; flex: none; }
+.colorrow.off input[type=color], .colorrow.off input[type=text] { opacity: .45; }
+.colorrow input[readonly] { background: transparent; border-color: transparent; }
+.colorrow .check { flex: none; margin: 0; }
 .check { display: flex; align-items: center; gap: 10px; font-size: 17px; margin: 6px 0; }
 .check input { width: 24px !important; height: 24px; }
 .savebar { position: sticky; bottom: 0; background: #eef0f5; display: flex; gap: 8px; align-items: center; padding: 10px 2px; }

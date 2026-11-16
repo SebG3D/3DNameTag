@@ -10,6 +10,7 @@ type P = { state: State; dispatch: Dispatch<Action> };
 
 const ERRORS: Record<string, string> = {
   queue_full: "Die Warteschlange ist gerade voll. Bitte frag am Stand nach!",
+  color_off: "Diese Farbe ist gerade alle. Geh zurück und such dir eine andere aus!",
   network: "Keine Verbindung zum Drucker-Computer. Bitte hol einen Erwachsenen.",
 };
 

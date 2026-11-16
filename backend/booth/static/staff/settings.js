@@ -20,13 +20,18 @@ const txt = (key, val, attrs = "") => `<input type="text" data-k="${key}" value=
 function renderSettings() {
   const d = S.settings, p = d.printer;
   const inUse = new Set(S.colors_in_use);
-  const colors = d.text_colors.map((c, i) => `
-    <div class="colorrow">
-      <input type="color" data-color="${i}" value="${esc(c.hex.toLowerCase())}">
-      <input type="text" data-cname="${i}" value="${esc(c.name)}" maxlength="20">
-      ${inUse.has(c.id) ? `<span class="muted" title="offene Anhänger">in Benutzung</span>`
+  const colors = d.text_colors.map((c, i) => {
+    const used = inUse.has(c.id) && !c._new;
+    return `
+    <div class="colorrow ${c.off ? "off" : ""}">
+      <input type="color" data-color="${i}" value="${esc(c.hex.toLowerCase())}" ${used ? "disabled" : ""}>
+      <input type="text" data-cname="${i}" value="${esc(c.name)}" maxlength="20" ${used ? "readonly" : ""}>
+      <label class="check" title="aus = keine neuen Bestellungen, offene Anhänger werden trotzdem gedruckt">
+        <input type="checkbox" data-con="${i}" ${c.off ? "" : "checked"}> bestellbar</label>
+      ${used ? `<span class="muted" title="offene Anhänger: Name und Farbton gesperrt">🔒 in Benutzung</span>`
         : `<button class="danger small" data-delcolor="${i}">✕</button>`}
-    </div>`).join("");
+    </div>`;
+  }).join("");
   const setupLocked = S.setup_locked || S.open_tags > 0 || S.plate_active;
   const setups = S.setups.map((s) => `<option value="${esc(s.name)}" ${s.name === S.current_setup ? "selected" : ""}>
       ${esc(s.name)} – Skalierung ${s.scale}, min. Text ${s.min_text_size} mm${s.default ? " (Standard)" : ""}</option>`).join("");
@@ -43,6 +48,8 @@ function renderSettings() {
       <div class="colorrow"><input type="color" id="baseHex" value="${esc(d.base_color.hex.toLowerCase())}">
         <input type="text" id="baseName" value="${esc(d.base_color.name)}" maxlength="20"></div></div>
     <div class="field"><span>Textfarben (vorhandene Rollen, Kinder wählen daraus)</span>${colors}
+      <small>„bestellbar“ aus: Kiosk bietet die Farbe nicht mehr an, offene Anhänger werden trotzdem gedruckt
+        (z. B. Rolle fast leer). Farben mit offenen Anhängern 🔒 lassen sich erst ändern oder löschen, wenn alle abgeholt sind.</small>
       <button class="small" id="addColor">+ Farbe</button></div>
   </section>
 
@@ -141,7 +148,8 @@ function collect() {
     const hex = document.querySelector(`[data-color="${i}"]`).value;
     const id = c._new ? slug(name || "farbe", new Set([...taken, ...d.text_colors.filter((x) => !x._new).map((x) => x.id)])) : c.id;
     taken.add(id);
-    return c._new ? { id, name, hex, _new: true } : { id, name, hex };
+    const off = !document.querySelector(`[data-con="${i}"]`).checked;
+    return c._new ? { id, name, hex, off, _new: true } : { id, name, hex, off };
   });
   d.pricing.price_per_extra_cents = Math.round(Number($("priceEuro").value) * 100);
   d.disabled_fonts = [...document.querySelectorAll("[data-font]")].filter((x) => !x.checked).map((x) => x.dataset.font);
