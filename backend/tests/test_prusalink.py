@@ -218,3 +218,43 @@ def test_wrong_nozzle_blocks_start(booth_fake):
     start(booth)
     assert plate(booth)["status"] == "printing"
     assert not booth.staff_overview()["printer"]["nozzle_wrong"]
+
+
+def test_loaded_material_warns(booth_fake):
+    """Printer's filament type (load menu / OpenPrintTag) differs from the
+    booth material: staff get a warning, the plate still starts."""
+    booth, f, host, clock = booth_fake                          # nozzle040s, PLA only
+    assert booth.setup.material == "pla"
+    order(booth, ("EMMA", "red"))
+    booth.tick()                                                # fake has PLA loaded
+    pr = booth.staff_overview()["printer"]
+    assert pr["material"] == "PLA" and not pr["material_wrong"]
+    ctl(host, "material/---")                                   # unloaded: no warning
+    booth.refresh_material()
+    assert booth.loaded_material == "" and not booth.material_wrong()
+    ctl(host, "material/PETG")
+    booth.refresh_material()
+    pr = booth.staff_overview()["printer"]
+    assert pr["material"] == "PETG" and pr["material_wrong"]
+    with pytest.raises(BoothError, match="kein PETG-Profil"):  # banner button, setup has no PETG
+        booth.staff_set_material("petg")
+    with pytest.raises(BoothError):
+        booth.staff_set_material("abs")
+    booth.staff_set_material("pla")                             # no-op save works
+    start(booth)                                                # warning only, never blocks
+    assert plate(booth)["status"] == "printing"
+
+
+
+def test_material_switch(fake, tmp_path):
+    """Banner button on a setup with PLA and PETG profiles."""
+    f, host, clock = fake
+    cfg = load_config(data_dir=tmp_path)
+    cfg.printer = {"type": "prusalink", "host": host, "user": "maker", "password": "secret", "storage": "usb"}
+    cfg.path = None
+    booth = Booth(cfg, setup_name="nozzle025petg_b3w", clock=clock)
+    booth.staff_set_material("petg")
+    booth.tick()                                                # fake: PLA loaded
+    assert booth.material_wrong()
+    booth.staff_set_material("pla")
+    assert booth.setup.material == "pla" and booth.cfg.material == "pla" and not booth.material_wrong()

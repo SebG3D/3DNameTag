@@ -165,6 +165,17 @@ function nozzleBanner() {
 
 const mat = (m) => (m || "").toUpperCase();
 
+// printer reports another filament type than the booth's material (load menu or
+// OpenPrintTag on the spool). Only a warning: staff switch the material or load the right spool.
+function materialBanner() {
+  const st = data.printer;
+  if (!st.material_wrong) return "";
+  const known = ["PLA", "PETG"].includes(st.material);
+  return `<div class="banner att">🧵 Drucker hat ${esc(st.material)} drin – eingestellt ist ${esc(mat(data.material))}!</div>
+    <div class="note">${esc(mat(data.material))}-Rolle einlegen${known ? " – oder:" : "."}
+    ${known ? `<button class="big warn" data-setmat="${st.material.toLowerCase()}">Auf ${esc(st.material)} umstellen</button>` : ""}</div>`;
+}
+
 function plateRow(p) {
   const [icon, word, cls] = PLATE[p.state];
   const c = color(p.text_color);
@@ -207,7 +218,7 @@ function plateRow(p) {
 }
 
 function renderPlates() {
-  $("plates").innerHTML = nozzleBanner() + foreignBanner() + (data.plates.map(plateRow).join("") ||
+  $("plates").innerHTML = nozzleBanner() + materialBanner() + foreignBanner() + (data.plates.map(plateRow).join("") ||
     `<p class="empty">Noch keine Platten. Sie kommen, sobald jemand bestellt.</p>`);
 }
 
@@ -216,7 +227,9 @@ function startPlate(p) {
   const again = p.state !== "waiting";
   act(`/api/staff/plates/${p.id}/start`, `<p class="q">${again ? "🔁" : "▶"} Platte ${p.id} ${again ? "nochmal drucken" : "starten"}?</p>
     <ul class="checks"><li>🧹 Druckplatte leer?</li><li>${dot(base.hex)} <b>${esc(base.name)} ${esc(mat(data.material))}</b> eingelegt?</li></ul>
-    <p class="muted">Danach Text in ${dot(c.hex)} ${esc(c.name)}.</p>`, "✓ Ja, los!");
+    ${data.printer.material_wrong ? `<div class="banner att">🧵 Achtung: Drucker meldet ${esc(data.printer.material)}, gedruckt wird mit ${esc(mat(data.material))}-Einstellungen!</div>` : ""}
+    <p class="muted">Danach Text in ${dot(c.hex)} ${esc(c.name)}.</p>`, data.printer.material_wrong ? "Trotzdem los" : "✓ Ja, los!",
+    data.printer.material_wrong ? "warn" : "primary");
 }
 
 function deletePlate(p) {
@@ -228,10 +241,13 @@ function deletePlate(p) {
 }
 
 $("plates").addEventListener("click", (e) => {
-  const el = e.target.closest("[data-start],[data-del],[data-cleared],[data-sim],[data-show]");
+  const el = e.target.closest("[data-start],[data-del],[data-cleared],[data-sim],[data-setmat],[data-show]");
   if (!el || el.disabled) return;
   const find = (id) => data.plates.find((p) => p.id === Number(id));
-  if (el.dataset.start) startPlate(find(el.dataset.start));
+  if (el.dataset.setmat) act(`/api/staff/material/${el.dataset.setmat}`,
+    `<p class="q">🧵 Auf ${esc(mat(el.dataset.setmat))} umstellen?</p><p>Gilt für jede Platte, die ab jetzt startet.</p>`,
+    `✓ Ja, ${esc(mat(el.dataset.setmat))}`);
+  else if (el.dataset.start) startPlate(find(el.dataset.start));
   else if (el.dataset.del) deletePlate(find(el.dataset.del));
   else if (el.dataset.cleared) act(`/api/staff/plates/${el.dataset.cleared}/delete`);   // done -> archived, tags stay printed
   else if ("sim" in el.dataset) act("/api/staff/sim/resume");

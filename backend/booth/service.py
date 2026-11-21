@@ -45,6 +45,7 @@ BACKUP_KEEP = 48
 ICON_NAME, ICON_FONT = "EMMA", "baloo"
 START_GRACE_S = 90          # printer may report idle this long after upload
 NOZZLE_POLL_S = 30          # how often the printer's nozzle setting is read
+MATERIAL_POLL_S = 10        # how often the loaded filament type is read (load menu / OpenPrintTag)
 # Time model, refined after every sliced plate (est = overhead + area * k).
 DEFAULT_PLATE_OVERHEAD_S = 35        # fitted to PrusaSlicer estimates, nozzle040s (2026-11-04)
 DEFAULT_S_PER_MM2 = 0.157
@@ -128,6 +129,8 @@ class Booth:
         self.last_status = PrinterStatus("offline", message="not polled yet")
         self.nozzle: float | None = None             # as reported by the printer (menu setting)
         self._nozzle_at = float("-inf")
+        self.loaded_material: str | None = None      # 'PLA'/'PETG'/..., '' = none loaded, None = unknown
+        self._material_at = float("-inf")
         self.plate_overhead_s = self.db.get_state("plate_overhead_s", DEFAULT_PLATE_OVERHEAD_S)
         self.s_per_mm2 = self.db.get_state("s_per_mm2", DEFAULT_S_PER_MM2)
         # real plate duration / slicer estimate (heating, M600 wait), learned
@@ -493,6 +496,8 @@ class Booth:
             self.last_status = st
             if st.state != "offline" and self.clock() - self._nozzle_at >= NOZZLE_POLL_S:
                 self.refresh_nozzle()
+            if st.state != "offline" and self.clock() - self._material_at >= MATERIAL_POLL_S:
+                self.refresh_material()
             self.plan()
             plate = self.db.active_plate()
             if not plate:
@@ -509,6 +514,20 @@ class Booth:
             log.info("printer nozzle: %g mm (setup %s wants %g mm)", n, self.setup.name, self.setup.nozzle)
         self.nozzle = n
         return n
+
+    def refresh_material(self) -> str | None:
+        m = self.printer.loaded_material()
+        self._material_at = self.clock()
+        if m != self.loaded_material:
+            log.info("printer reports filament %r (booth material %s)", m, self.setup.material)
+        self.loaded_material = m
+        return m
+
+    def material_wrong(self) -> bool:
+        """Printer reports a filament type other than the booth's material.
+        Only a warning (staff page + start dialog), never blocks: the printer's
+        value may be stale if someone skipped the load menu."""
+        return bool(self.loaded_material) and self.loaded_material.lower() != self.setup.material.lower()
 
     def nozzle_wrong(self) -> bool:
         """Printer reports a different nozzle than the print setup's profile."""
@@ -663,7 +682,8 @@ class Booth:
                             "remaining_s": st.remaining_s, "message": st.message,
                             "foreign_job": self.foreign_job_s() > 0,
                             "nozzle": self.nozzle, "nozzle_want": self.setup.nozzle,
-                            "nozzle_wrong": self.nozzle_wrong()},
+                            "nozzle_wrong": self.nozzle_wrong(),
+                            "material": self.loaded_material, "material_wrong": self.material_wrong()},
                 "orders": orders, "plates": plates,
                 "base_color": self.cfg.base_color, "text_colors": self.cfg.text_colors,
                 "setup": self.setup.name, "material": self.setup.material, "eta_all_s": int(self.eta_s()), "today": self._day(),
@@ -909,10 +929,19 @@ class Booth:
                     shutil.rmtree(self.previews.pop(pid).stl.parent, ignore_errors=True)
             if printer is not self.printer:
                 self.nozzle, self._nozzle_at = None, float("-inf")
+                self.loaded_material, self._material_at = None, float("-inf")
             self.cfg, self.printer = new, printer
             self.config_rev += 1
         log.info("settings saved (rev %d)", self.config_rev)
         return self.staff_settings()
+
+    def staff_set_material(self, material: str) -> dict:
+        """One-tap switch from the 'printer has other filament' banner."""
+        if material not in ("pla", "petg"):
+            raise BoothError("bad_material", f"unbekanntes Material {material}")
+        d = self.staff_settings()["settings"]
+        d["material"] = material
+        return self.staff_update_settings(d)
 
     def staff_test_printer(self, p: dict) -> dict:
         """Status of a printer config without applying it."""

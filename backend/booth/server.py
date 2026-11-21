@@ -169,6 +169,11 @@ def create_app(booth: Booth, run_loop: bool = True) -> FastAPI:
     def put_settings(req: dict = Body(...)):
         return booth.staff_update_settings(req)
 
+    @app.post("/api/staff/material/{material}", dependencies=[Depends(staff)])
+    def set_material(material: str):
+        booth.staff_set_material(material)
+        return {"ok": True}
+
     @app.post("/api/staff/printer/test", dependencies=[Depends(staff)])
     async def test_printer(req: dict = Body(...)):
         return await run_in_threadpool(booth.staff_test_printer, req)

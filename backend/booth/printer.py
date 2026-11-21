@@ -51,6 +51,13 @@ class Printer:
         """Nozzle diameter set in the printer menu (mm), None = unknown."""
         return None
 
+    def loaded_material(self) -> str | None:
+        """Filament type the printer thinks is loaded ('PLA', 'PETG', ...),
+        upper case. Set by the load menu or, with firmware 8+ and the
+        OpenPrintTag reader, read from the spool's NFC tag. '' = nothing
+        loaded, None = unknown (no answer / not supported)."""
+        return None
+
 
 class SimPrinter(Printer):
     """speed: simulated seconds per real second. Colour change at the M600
@@ -178,6 +185,19 @@ class PrusaLinkPrinter(Printer):
             return float(d) if d is not None else None
         except (httpx.HTTPError, ValueError, TypeError, PrinterNotReady):
             return None
+
+    def loaded_material(self) -> str | None:
+        """From the legacy /api/printer (telemetry.material) - PrusaLink v1
+        has no material field. The full OpenPrintTag data (colour, weight)
+        only goes to Prusa Connect, not to PrusaLink (firmware 8.0.0)."""
+        try:
+            m = (self._get("/api/printer").get("telemetry") or {}).get("material")
+        except (httpx.HTTPError, ValueError, PrinterNotReady):
+            return None
+        if m is None:
+            return None
+        m = str(m).strip().upper()
+        return "" if m in ("", "---", "NONE") else m
 
     def start(self, gcode: Path, est_s: int) -> None:
         name = gcode.name

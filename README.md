@@ -35,7 +35,10 @@ cd backend && .venv/bin/python -m booth.server --port 8080      # simulated prin
 Staff page: `http://<pi>:8080/staff/` (PIN from `config/booth.json` or env `BOOTH_PIN`).
 "⚙ Einstellungen" on the staff page edits `config/booth.json` and applies it live (no restart): event name,
 base/text colours, prices, order/queue limits, plate size/wait, fonts/shapes on/off, kiosk idle time + sound (every letter is a pentatonic note, the names play as a tune after ordering), staff sounds (each Kasse item has its own synthesized sound with ▶ test, ka-ching/fanfare on payment, alerts for plate done / colour change (repeats every minute) / error / new order; 🔊 in the header mutes one device),
-printer (sim/PrusaLink, connection test), print setup (only with an empty queue), material PLA/PETG (any time, next plate start), staff PIN. The kiosk
+printer (sim/PrusaLink, connection test), print setup (only with an empty queue), material PLA/PETG (any time, next plate start), staff PIN. The booth reads the loaded filament type from the printer every 10 s
+(legacy `/api/printer` `telemetry.material`: set by the load menu, or from the spool's OpenPrintTag NFC tag with firmware ≥ 8.0.0 and the
+reader upgrade); if it differs from the booth material the print tab shows a 🧵 banner with a one-tap switch and the Start dialog warns
+(never blocks). Colour/weight from the tag only go to Prusa Connect, not PrusaLink. The kiosk
 picks changes up the next time it is on its start screen. `--config <file>` / `BOOTH_CONFIG` selects another booth.json.
 Kiosk API: `GET /api/config`, `GET /api/status`, `POST /api/fit`, `POST /api/preview`, `POST /api/orders`.
 For the real printer set `"printer": {"type": "prusalink", "host": ..., "api_key": ...}` – a USB stick must be
